@@ -1,0 +1,28 @@
+{
+  "id": "violin-quest-pro",
+  "name": "Violin Quest Pro",
+  "short_name": "Violin Quest",
+  "description": "離線可用的小提琴訓練 App：自適應每日任務、能力面板、節拍器／持續音／調音器、錄音驗收與國際賽任務線。",
+  "lang": "zh-Hant",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#f4f6f8",
+  "theme_color": "#f4f6f8",
+  "categories": ["education", "music", "productivity"],
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-256.png", "sizes": "256x256", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "今日訓練", "url": "./index.html#/dashboard" },
+    { "name": "節拍器", "url": "./index.html#/practice/metronome" },
+    { "name": "調音器", "url": "./index.html#/practice/tuner" },
+    { "name": "錄音", "url": "./index.html#/recordings/new" }
+  ]
+}

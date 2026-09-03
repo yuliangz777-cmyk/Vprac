@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Violin Quest Pro</title>
+<meta name="description" content="離線可用的小提琴訓練 App：自適應每日任務、能力面板、節拍器／持續音／調音器、錄音驗收與國際賽任務線。">
+<meta name="theme-color" content="#f4f6f8">
+<meta name="color-scheme" content="light dark">
+
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/favicon.png" sizes="64x64">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+
+<!-- iOS home-screen behaviour -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Violin Quest">
+<meta name="format-detection" content="telephone=no">
+
+<link rel="stylesheet" href="./assets/css/app.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <span class="brand__mark">VQ</span>
+      <span class="brand__text"><strong>Violin Quest</strong><small>Competition Path</small></span>
+    </div>
+    <nav class="side-nav" id="sideNav"></nav>
+    <div class="side-foot">
+      <div class="mini"><span>等級</span><strong id="sideLevel">LV.1</strong></div>
+      <div class="mini"><span>總 XP</span><strong id="sideXp">0</strong></div>
+      <div class="mini"><span>連勝</span><strong id="sideStreak">0</strong></div>
+    </div>
+  </aside>
+  <div class="nav-scrim" id="navScrim"></div>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="icon-btn" id="menuBtn" aria-label="選單">☰</button>
+      <span class="topbar__brand"><span class="brand__mark brand__mark--sm">VQ</span> Violin Quest</span>
+      <span class="topbar__stats"><b id="headerLevel">LV.1</b><b id="headerStreak">🔥 0</b></span>
+    </header>
+    <main class="view" id="view"></main>
+  </div>
+</div>
+
+<div class="practice-bar" id="practiceBar" hidden></div>
+<nav class="tabbar" id="tabBar" aria-label="主要導覽"></nav>
+
+<div class="modal-backdrop hidden" id="modalBackdrop">
+  <div class="modal" id="modal" role="dialog" aria-modal="true"></div>
+</div>
+
+<div class="update-banner" id="updateBanner" hidden>
+  <span>有新版本可用</span>
+  <button class="btn btn--sm btn--primary" data-update-now>立即更新</button>
+  <button class="btn btn--sm btn--ghost" data-update-later>稍後</button>
+</div>
+
+<div id="toastHost"></div>
+
+<noscript><p style="padding:24px;font-family:sans-serif">Violin Quest Pro 需要 JavaScript 才能執行。</p></noscript>
+
+<script type="module" src="./assets/js/main.js"></script>
+</body>
+</html>
