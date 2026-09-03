@@ -10,9 +10,12 @@
 
 ### 方法 A：用 GitHub Pages（推薦，可離線、可自動更新）
 
-1. 這個 repo 已內建部署流程 `.github/workflows/pages.yml`。
-2. 到 GitHub 專案頁 → **Settings → Pages → Build and deployment → Source** 選 **GitHub Actions**，存檔。
-3. 推送後 Actions 會自動跑測試並部署，網址是：
+1. **（只需做一次，必要）** 到 GitHub 專案頁 →
+   **Settings → Pages → Build and deployment → Source** 選 **GitHub Actions**。
+   GitHub 不允許 workflow 自己替 repo 開啟 Pages，所以這一步必須手動點一次；
+   沒開之前，部署流程會停在 `configure-pages` 並在 log 裡提示同樣的說明。
+2. 到 **Actions → Deploy to GitHub Pages → Run workflow**（或直接再推一次 commit）重跑一次。
+   流程會先跑單元測試，通過才部署。網址是：
    `https://<你的帳號>.github.io/<repo 名稱>/`
    （本 repo 即 `https://yuliangz777-cmyk.github.io/Vprac/`）
 4. 用 **iPhone Safari** 打開那個網址（必須是 Safari，Chrome/Line 內建瀏覽器不能加主畫面）。

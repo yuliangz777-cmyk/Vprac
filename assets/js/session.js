@@ -43,14 +43,26 @@ export const session = {
     this._emit();
   },
 
+  /** Pause when running, otherwise resume the current session (or start one). */
   toggle(opts) {
-    if (this.running) this.pause(); else this.start(opts);
+    if (this.running) { this.pause(); return; }
+    if (this.active) {
+      const { taskIndex, title, freeform } = this.active;
+      this.start({ taskIndex, title, freeform });
+      return;
+    }
+    this.start(opts);
   },
 
   /** Stop, persisting whatever has not been written yet. */
   stop() {
     if (!this.active) return 0;
-    const total = this.elapsed();
+    // Fold the in-flight segment in first, or the last stretch is lost.
+    if (this.active.startedAt) {
+      this.active.accumulated = this.elapsed();
+      this.active.startedAt = null;
+    }
+    const total = this.active.accumulated;
     this._flush();
     this.active = null;
     wakeLock.release();
@@ -87,11 +99,13 @@ export const session = {
 };
 
 // Do not silently lose time when the app is closed or backgrounded.
-window.addEventListener('pagehide', () => { if (session.running) session.pause(); });
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden' && session.running) {
-    session.active.accumulated = session.elapsed();
-    session.active.startedAt = Date.now();
-    session._flush();
-  }
-});
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => { if (session.running) session.pause(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && session.running) {
+      session.active.accumulated = session.elapsed();
+      session.active.startedAt = Date.now();
+      session._flush();
+    }
+  });
+}

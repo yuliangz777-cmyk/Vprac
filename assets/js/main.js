@@ -98,7 +98,7 @@ function renderPracticeBar() {
 
   $$('[data-bar]', bar).forEach((btn) => btn.addEventListener('click', () => {
     const action = btn.dataset.bar;
-    if (action === 'toggle') session.toggle({ freeform: !session.active });
+    if (action === 'toggle') session.toggle({ freeform: true });
     if (action === 'stop') {
       const total = session.stop();
       if (total > 30) toast(`已記錄 ${Math.round(total / 60)} 分鐘`, 'good');

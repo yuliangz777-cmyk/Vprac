@@ -203,6 +203,35 @@ test('dayMinutes prefers measured time over the estimate', () => {
   assert.equal(stateModule.dayMinutes(day), 10 + 30 + 5);
 });
 
+/* ----------------------------------------------------- practice timer */
+
+test('the practice timer records every segment, including the last one', async () => {
+  const { session } = await import('../assets/js/session.js');
+  const s = stateModule.state;
+  const today = stateModule.todayKey();
+  s.days = { [today]: { ...stateModule.emptyDay(), tasks: [{ id: 'a', mins: 20, xp: 10, done: false, spent: 0 }] } };
+
+  const realNow = Date.now;
+  let clock = realNow();
+  Date.now = () => clock;
+  try {
+    session.start({ taskIndex: 0, title: '音階' });
+    clock += 60_000;
+    session.pause();                      // first segment: 60s
+    assert.equal(s.days[today].tasks[0].spent, 60);
+
+    session.toggle();                     // resume the same quest, not a new one
+    assert.equal(session.active.taskIndex, 0);
+    clock += 30_000;
+    const total = session.stop();         // second segment must not be lost
+    assert.equal(Math.round(total), 90);
+    assert.equal(s.days[today].tasks[0].spent, 90);
+    assert.equal(session.active, null);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
 /* ------------------------------------------------------------- audio */
 
 test('autoCorrelate recovers a synthesised pitch', () => {

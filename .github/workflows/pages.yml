@@ -37,10 +37,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
-        # Turns Pages on for the repo the first time this runs, so no manual
-        # Settings → Pages step is needed.
+        id: pages
+        # Tries to switch Pages on by itself; on repositories where the
+        # workflow token may not create the Pages site, the step below explains
+        # the one-time manual toggle.
         with:
           enablement: true
+      - name: How to enable Pages
+        if: failure() && steps.pages.outcome == 'failure'
+        run: |
+          echo "::error::GitHub Pages is not enabled for this repository yet."
+          echo "Open  Settings → Pages → Build and deployment → Source  and pick 'GitHub Actions',"
+          echo "then re-run this workflow. Nothing in the code needs to change."
+          exit 1
       - name: Package the site
         run: |
           mkdir -p _site
