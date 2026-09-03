@@ -37,6 +37,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+        # Turns Pages on for the repo the first time this runs, so no manual
+        # Settings → Pages step is needed.
+        with:
+          enablement: true
       - name: Package the site
         run: |
           mkdir -p _site

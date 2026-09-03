@@ -34,11 +34,6 @@
   color-scheme: light dark;
 }
 
-:root[data-theme="dark"],
-:root:not([data-theme="light"]) {
-  /* placeholder so the cascade below stays symmetric */
-}
-
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #10151a;
