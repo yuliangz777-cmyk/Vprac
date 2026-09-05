@@ -193,20 +193,20 @@ export const WEEKLY_ACCEPTANCE = [
 
 /** Achievements are pure predicates over a computed stats object. */
 export const ACHIEVEMENTS = [
-  { id: 'first-day', icon: '🎻', name: '第一天', desc: '完成第一項每日任務。', test: (s) => s.totalTasksDone >= 1 },
-  { id: 'streak-3', icon: '🔥', name: '三日連勝', desc: '連續 3 天完成當日任務。', test: (s) => s.bestStreak >= 3 },
-  { id: 'streak-7', icon: '🔥', name: '一週不斷', desc: '連續 7 天完成當日任務。', test: (s) => s.bestStreak >= 7 },
-  { id: 'streak-30', icon: '🏆', name: '一個月', desc: '連續 30 天完成當日任務。', test: (s) => s.bestStreak >= 30 },
-  { id: 'hours-10', icon: '⏱️', name: '10 小時', desc: '累積練習 10 小時。', test: (s) => s.totalMinutes >= 600 },
-  { id: 'hours-100', icon: '⏱️', name: '100 小時', desc: '累積練習 100 小時。', test: (s) => s.totalMinutes >= 6000 },
-  { id: 'boss-1', icon: '👑', name: '首殺 Boss', desc: '完成第一次不中斷錄影驗收。', test: (s) => s.bossCount >= 1 },
-  { id: 'boss-10', icon: '👑', name: '十次上場', desc: '完成 10 次 Boss 驗收。', test: (s) => s.bossCount >= 10 },
-  { id: 'rec-5', icon: '🎙️', name: '錄音習慣', desc: '錄下 5 個 take。', test: (s) => s.recordingCount >= 5 },
-  { id: 'review-4', icon: '📓', name: '四週回顧', desc: '完成 4 次週回顧。', test: (s) => s.weeklyReviewCount >= 4 },
-  { id: 'ready-80', icon: '🎯', name: '可上場', desc: '任一曲目成熟度達 80%。', test: (s) => s.maxReadiness >= 80 },
-  { id: 'all-70', icon: '📈', name: '全能 70', desc: '八項能力全部達到 70。', test: (s) => s.minSkill >= 70 },
-  { id: 'comp-1', icon: '🏅', name: '上戰場', desc: '登錄第一場比賽紀錄。', test: (s) => s.competitionCount >= 1 },
-  { id: 'perfect-day', icon: '✨', name: '完美一日', desc: '單日任務全清＋Boss 完成。', test: (s) => s.perfectDays >= 1 },
+  { id: 'first-day', icon: 'note', name: '第一天', desc: '完成第一項每日任務。', test: (s) => s.totalTasksDone >= 1 },
+  { id: 'streak-3', icon: 'flame', name: '三日連勝', desc: '連續 3 天完成當日任務。', test: (s) => s.bestStreak >= 3 },
+  { id: 'streak-7', icon: 'flame', name: '一週不斷', desc: '連續 7 天完成當日任務。', test: (s) => s.bestStreak >= 7 },
+  { id: 'streak-30', icon: 'trophy', name: '一個月', desc: '連續 30 天完成當日任務。', test: (s) => s.bestStreak >= 30 },
+  { id: 'hours-10', icon: 'clock', name: '10 小時', desc: '累積練習 10 小時。', test: (s) => s.totalMinutes >= 600 },
+  { id: 'hours-100', icon: 'clock', name: '100 小時', desc: '累積練習 100 小時。', test: (s) => s.totalMinutes >= 6000 },
+  { id: 'boss-1', icon: 'crown', name: '首殺 Boss', desc: '完成第一次不中斷錄影驗收。', test: (s) => s.bossCount >= 1 },
+  { id: 'boss-10', icon: 'crown', name: '十次上場', desc: '完成 10 次 Boss 驗收。', test: (s) => s.bossCount >= 10 },
+  { id: 'rec-5', icon: 'mic', name: '錄音習慣', desc: '錄下 5 個 take。', test: (s) => s.recordingCount >= 5 },
+  { id: 'review-4', icon: 'book', name: '四週回顧', desc: '完成 4 次週回顧。', test: (s) => s.weeklyReviewCount >= 4 },
+  { id: 'ready-80', icon: 'target', name: '可上場', desc: '任一曲目成熟度達 80%。', test: (s) => s.maxReadiness >= 80 },
+  { id: 'all-70', icon: 'chart', name: '全能 70', desc: '八項能力全部達到 70。', test: (s) => s.minSkill >= 70 },
+  { id: 'comp-1', icon: 'medal', name: '上戰場', desc: '登錄第一場比賽紀錄。', test: (s) => s.competitionCount >= 1 },
+  { id: 'perfect-day', icon: 'sparkle', name: '完美一日', desc: '單日任務全清＋Boss 完成。', test: (s) => s.perfectDays >= 1 },
 ];
 
 /* --------------------------------------------------------- pure logic */

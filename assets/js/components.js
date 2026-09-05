@@ -3,6 +3,7 @@
 
 import { esc, pct, formatMinutes } from './util.js';
 import { SKILL_LABELS } from './content.js';
+import { icon } from './icons.js';
 
 export function pageHead(title, subtitle, right = '') {
   return `<header class="page-head">
@@ -13,9 +14,9 @@ export function pageHead(title, subtitle, right = '') {
 
 export function statPills(stats) {
   return `<div class="pills">
-    <span class="pill"><b>LV.${stats.level}</b> 等級</span>
+    <span class="pill"><b>${stats.level}</b> Level</span>
     <span class="pill"><b>${stats.xp}</b> XP</span>
-    <span class="pill pill--flame"><b>${stats.streak}</b> 天連勝</span>
+    <span class="pill pill--flame"><b>${stats.streak}</b> Streak</span>
   </div>`;
 }
 
@@ -106,8 +107,8 @@ export function minutesChart(series, goal = 0) {
   return `<div class="chart">${goalLine}<div class="chart__cols">${bars}</div></div>`;
 }
 
-export function emptyState(icon, title, hint = '') {
-  return `<div class="empty"><div class="empty__icon">${icon}</div><strong>${esc(title)}</strong>${hint ? `<p class="muted">${esc(hint)}</p>` : ''}</div>`;
+export function emptyState(iconName, title, hint = '') {
+  return `<div class="empty"><div class="empty__icon">${icon(iconName)}</div><strong>${esc(title)}</strong>${hint ? `<p class="muted">${esc(hint)}</p>` : ''}</div>`;
 }
 
 export function field(label, control, hint = '') {

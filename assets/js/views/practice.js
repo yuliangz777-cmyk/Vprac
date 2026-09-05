@@ -5,13 +5,14 @@ import { audio, Tuner, midiToFreq, OPEN_STRINGS } from '../audio.js';
 import { setSetting } from '../state.js';
 import { session } from '../session.js';
 import { pageHead, sectionTitle } from '../components.js';
+import { icon } from '../icons.js';
 import { $, $$, esc, clamp, formatClock, toast } from '../util.js';
 
 const TABS = [
-  { id: 'metronome', label: '節拍器', icon: '🥁' },
-  { id: 'drone', label: '持續音', icon: '🎵' },
-  { id: 'tuner', label: '調音器', icon: '📈' },
-  { id: 'timer', label: '計時器', icon: '⏱️' },
+  { id: 'metronome', label: '節拍器', icon: 'metronome' },
+  { id: 'drone', label: '持續音', icon: 'tone' },
+  { id: 'tuner', label: '調音器', icon: 'gauge' },
+  { id: 'timer', label: '計時器', icon: 'clock' },
 ];
 
 const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
@@ -30,7 +31,7 @@ export const practiceView = {
   id: 'practice',
   label: '練習',
   title: '練習工具',
-  icon: '🎼',
+  icon: 'metronome',
   primary: true,
 
   mount(root, params = []) {
@@ -43,7 +44,7 @@ export const practiceView = {
       root.innerHTML = `
         ${pageHead('練習工具', '節拍器、持續音、調音器與計時器都在離線可用。')}
         <div class="segmented" role="tablist">
-          ${TABS.map((t) => `<button role="tab" class="segmented__btn ${t.id === tab ? 'is-on' : ''}" data-tab="${t.id}">${t.icon} ${t.label}</button>`).join('')}
+          ${TABS.map((t) => `<button role="tab" class="segmented__btn ${t.id === tab ? 'is-on' : ''}" data-tab="${t.id}">${icon(t.icon)}${t.label}</button>`).join('')}
         </div>
         <div id="toolPane"></div>`;
       $$('[data-tab]', root).forEach((btn) => btn.addEventListener('click', () => {
@@ -82,7 +83,7 @@ export const practiceView = {
             ${Array.from({ length: beats }, (_, i) => `<span class="beat ${i === 0 ? 'beat--accent' : ''}" data-beat="${i}"></span>`).join('')}
           </div>
           <div class="row row--center" style="margin:14px 0 4px">
-            <button class="btn btn--big ${audio.metroRunning ? 'btn--danger' : 'btn--primary'}" data-metro-toggle>${audio.metroRunning ? '■ 停止' : '▶︎ 開始'}</button>
+            <button class="btn btn--big ${audio.metroRunning ? 'btn--danger' : 'btn--primary'}" data-metro-toggle>${audio.metroRunning ? `${icon('stop')}停止` : `${icon('play')}開始`}</button>
             <button class="btn btn--ghost btn--big" data-tap>Tap</button>
           </div>
           <div class="grid-2">
@@ -128,7 +129,7 @@ export const practiceView = {
       $('[data-metro-toggle]', root).addEventListener('click', (e) => {
         ladder.barCount = 0;
         const running = audio.toggleMetronome();
-        e.currentTarget.textContent = running ? '■ 停止' : '▶︎ 開始';
+        e.currentTarget.innerHTML = running ? `${icon('stop')}停止` : `${icon('play')}開始`;
         e.currentTarget.classList.toggle('btn--danger', running);
         e.currentTarget.classList.toggle('btn--primary', !running);
         window.dispatchEvent(new CustomEvent('vq:audio-changed'));
@@ -192,7 +193,7 @@ export const practiceView = {
             <span>${midiToFreq(midi, audio.a4).toFixed(1)} Hz · A4 = ${audio.a4} Hz</span>
           </div>
           <div class="row row--center" style="margin:6px 0 14px">
-            <button class="btn btn--big ${audio.droneRunning ? 'btn--danger' : 'btn--primary'}" data-drone-toggle>${audio.droneRunning ? '■ 停止' : '▶︎ 播放'}</button>
+            <button class="btn btn--big ${audio.droneRunning ? 'btn--danger' : 'btn--primary'}" data-drone-toggle>${audio.droneRunning ? `${icon('stop')}停止` : `${icon('play')}播放`}</button>
           </div>
           <p class="field__label">空弦</p>
           <div class="row row--wrap">
@@ -251,7 +252,7 @@ export const practiceView = {
             <div class="tuner__cents" data-tuner-cents>—</div>
           </div>
           <div class="row row--center" style="margin-top:14px">
-            <button class="btn btn--big btn--primary" data-tuner-toggle>${tuner?.running ? '■ 停止' : '🎤 開始調音'}</button>
+            <button class="btn btn--big btn--primary" data-tuner-toggle>${tuner?.running ? `${icon('stop')}停止` : `${icon('mic')}開始調音`}</button>
           </div>
           <div class="row row--wrap row--center" style="margin-top:14px">
             ${OPEN_STRINGS.map((s) => `<button class="chip" data-pluck="${s.midi}">${s.name} ${midiToFreq(s.midi, audio.a4).toFixed(1)}Hz</button>`).join('')}
@@ -289,14 +290,14 @@ export const practiceView = {
         if (tuner?.running) {
           tuner.stop();
           tuner = null;
-          toggle.textContent = '🎤 開始調音';
+          toggle.innerHTML = `${icon('mic')}開始調音`;
           onReading(null);
           return;
         }
         try {
           tuner = new Tuner();
           await tuner.start(onReading, audio.a4);
-          toggle.textContent = '■ 停止';
+          toggle.innerHTML = `${icon('stop')}停止`;
         } catch (err) {
           tuner = null;
           toast(err.message || '無法取得麥克風權限', 'bad');
@@ -319,8 +320,8 @@ export const practiceView = {
           <div class="timer__display" data-timer-display>${formatClock(session.elapsed())}</div>
           <p class="muted" style="text-align:center">${esc(session.active?.title || '自由練習')}</p>
           <div class="row row--center" style="margin:14px 0">
-            <button class="btn btn--big ${session.running ? 'btn--danger' : 'btn--primary'}" data-timer-toggle>${session.running ? '⏸ 暫停' : '▶︎ 開始'}</button>
-            <button class="btn btn--ghost btn--big" data-timer-stop>■ 結束並記錄</button>
+            <button class="btn btn--big ${session.running ? 'btn--danger' : 'btn--primary'}" data-timer-toggle>${session.running ? `${icon('pause')}暫停` : `${icon('play')}開始`}</button>
+            <button class="btn btn--ghost btn--big" data-timer-stop>${icon('stop')}結束並記錄</button>
           </div>
           <p class="muted small" style="text-align:center">計時會累加到今天的練習時數；沒有綁定任務時記為自由練習。</p>
         </section>

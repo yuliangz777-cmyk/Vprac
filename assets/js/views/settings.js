@@ -5,7 +5,8 @@ import {
 } from '../state.js';
 import { recordingsDB } from '../db.js';
 import { audio } from '../audio.js';
-import { applyTheme } from '../theme.js';
+import { applyPalette, applyTypeface, PALETTES, TYPEFACES } from '../theme.js';
+import { icon } from '../icons.js';
 import { pageHead, sectionTitle, statTile } from '../components.js';
 import { $, $$, esc, toast, confirmDialog, download, formatBytes, isIOS, isStandalone } from '../util.js';
 import { APP_VERSION } from '../version.js';
@@ -14,12 +15,14 @@ export const settingsView = {
   id: 'settings',
   label: '設定',
   title: '設定',
-  icon: '⚙️',
+  icon: 'settings',
 
   mount(root) {
     const render = async () => {
       const p = state.profile;
       const st = state.settings;
+      const current = st.palette || st.theme || 'auto';
+      const face = st.typeface || 'serif';
       const s = stats();
       const { usage, quota } = await recordingsDB.usage();
 
@@ -38,13 +41,33 @@ export const settingsView = {
           </div>
         </section>
 
+        ${sectionTitle('色系')}
         <section class="card">
-          <h3>外觀與音訊</h3>
-          <label class="field"><span class="field__label">主題</span>
-            <select class="input" data-s="theme">
-              ${[['auto', '跟隨系統'], ['light', '淺色'], ['dark', '深色']].map(([v, l]) => `<option value="${v}" ${st.theme === v ? 'selected' : ''}>${l}</option>`).join('')}
-            </select>
-          </label>
+          <p class="muted small" style="margin-bottom:12px">四種暖色調配色，換了立刻生效。</p>
+          <div class="palette-grid">
+            ${[{ id: 'auto', name: '跟隨系統', latin: 'Automatic', hint: '白天香檳象牙，夜間琥珀夜', swatch: ['#f6f1e8', '#cfa74f', '#100e0b', '#d3ad63'] }, ...PALETTES].map((p) => `
+              <button class="palette-card ${current === p.id ? 'is-on' : ''}" data-palette="${p.id}">
+                <span class="palette-card__swatch">${p.swatch.map((c) => `<i style="background:${c}"></i>`).join('')}</span>
+                <span class="palette-card__body">
+                  ${current === p.id ? `<span class="palette-card__tick">${icon('check')}</span>` : ''}
+                  <strong>${esc(p.name)}</strong>
+                  <small>${esc(p.latin)} · ${esc(p.hint)}</small>
+                </span>
+              </button>`).join('')}
+          </div>
+        </section>
+
+        ${sectionTitle('標題字體')}
+        <section class="card">
+          <p class="muted small" style="margin-bottom:12px">英文一律使用 Cormorant Garamond；這裡切換的是中文標題。</p>
+          <div class="segmented">
+            ${TYPEFACES.map((t) => `<button class="segmented__btn ${face === t.id ? 'is-on' : ''}" data-face="${t.id}">${esc(t.name)}</button>`).join('')}
+          </div>
+          <p class="muted small">${esc(TYPEFACES.find((t) => t.id === face)?.hint || '')}</p>
+        </section>
+
+        ${sectionTitle('音訊')}
+        <section class="card">
           <label class="field"><span class="field__label">基準音 A4：<b data-a4-out>${st.a4}</b> Hz</span>
             <input class="slider" type="range" min="432" max="446" value="${st.a4}" data-s-range="a4">
           </label>
@@ -97,10 +120,18 @@ export const settingsView = {
         toast('已儲存', 'good');
       }));
 
-      $('[data-s="theme"]', root).addEventListener('change', (e) => {
-        setSetting('theme', e.target.value);
-        applyTheme(e.target.value);
-      });
+      $$('[data-face]', root).forEach((btn) => btn.addEventListener('click', () => {
+        setSetting('typeface', btn.dataset.face);
+        applyTypeface(btn.dataset.face);
+        render();
+      }));
+
+      $$('[data-palette]', root).forEach((btn) => btn.addEventListener('click', () => {
+        const id = btn.dataset.palette;
+        setSetting('palette', id);
+        applyPalette(id);
+        render();
+      }));
 
       const a4 = $('[data-s-range="a4"]', root);
       a4.addEventListener('input', () => { $('[data-a4-out]', root).textContent = a4.value; });

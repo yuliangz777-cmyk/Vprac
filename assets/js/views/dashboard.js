@@ -10,6 +10,7 @@ import { navigate } from '../router.js';
 import {
   pageHead, statPills, ring, statTile, sectionTitle, minutesChart, progressBar, emptyState,
 } from '../components.js';
+import { icon } from '../icons.js';
 import { $, $$, esc, pct, formatClock, formatDate, addDays, weekStart, toast, formatMinutes } from '../util.js';
 
 function greeting() {
@@ -21,13 +22,15 @@ function greeting() {
   return '晚安';
 }
 
+const TOOL_ICONS = { metronome: 'metronome', drone: 'tone', tuner: 'gauge', record: 'mic' };
+
 function taskCard(task, index, activeIndex) {
   const spent = task.spent || 0;
   const isActive = activeIndex === index;
   const ratio = task.mins ? Math.min(100, (spent / 60 / task.mins) * 100) : 0;
-  const tools = (task.tools || []).map((t) => `<button class="chip" data-tool="${esc(t)}" data-task="${index}">${esc(TOOL_LABELS[t] || t)}</button>`).join('');
+  const tools = (task.tools || []).map((t) => `<button class="chip" data-tool="${esc(t)}" data-task="${index}">${icon(TOOL_ICONS[t] || 'sparkle')}${esc(TOOL_LABELS[t] || t)}</button>`).join('');
   return `<article class="quest ${task.done ? 'is-done' : ''} ${isActive ? 'is-active' : ''}" data-index="${index}">
-    <button class="quest__check" data-toggle="${index}" aria-label="${task.done ? '取消完成' : '標記完成'}">${task.done ? '✓' : ''}</button>
+    <button class="quest__check" data-toggle="${index}" aria-label="${task.done ? '取消完成' : '標記完成'}">${icon('check')}</button>
     <div class="quest__body">
       <div class="quest__top">
         <h3>${esc(task.title)}</h3>
@@ -40,7 +43,7 @@ function taskCard(task, index, activeIndex) {
       </div>
       ${progressBar(ratio)}
       <div class="quest__tools">
-        <button class="chip chip--primary" data-timer="${index}">${isActive && session.running ? '⏸ 暫停' : '▶︎ 開始計時'}</button>
+        <button class="chip chip--primary" data-timer="${index}">${isActive && session.running ? `${icon('pause')}暫停` : `${icon('play')}開始計時`}</button>
         ${tools}
       </div>
     </div>
@@ -51,7 +54,7 @@ export const dashboardView = {
   id: 'dashboard',
   label: '今日',
   title: '今日訓練',
-  icon: '🎯',
+  icon: 'target',
   primary: true,
 
   mount(root) {
@@ -78,7 +81,7 @@ export const dashboardView = {
       root.innerHTML = `
         ${pageHead(`${greeting()}${state.profile.name ? `，${state.profile.name}` : ''}`, `${formatDate(key)}｜最弱能力：${weak}`, statPills(s))}
 
-        ${yesterdayFocus ? `<div class="callout"><span class="callout__icon">📌</span><div><strong>昨天寫下的第一優先</strong><p>${esc(yesterdayFocus)}</p></div></div>` : ''}
+        ${yesterdayFocus ? `<div class="callout"><span class="callout__icon">${icon('pin')}</span><div><strong>昨天寫下的第一優先</strong><p>${esc(yesterdayFocus)}</p></div></div>` : ''}
 
         <section class="card hero">
           <div class="hero__info">
@@ -104,7 +107,7 @@ export const dashboardView = {
         <div class="quests">
           ${day.tasks.length
             ? day.tasks.map((t, i) => taskCard(t, i, active)).join('')
-            : emptyState('🗒️', '今天還沒有任務', '按「重新派發」產生今日訓練菜單。')}
+            : emptyState('scroll', '今天還沒有任務', '按「重新派發」產生今日訓練菜單。')}
         </div>
 
         ${sectionTitle('今日 Boss')}
@@ -122,7 +125,7 @@ export const dashboardView = {
           <textarea class="input" rows="2" placeholder="錄完後立刻寫下 3 個問題…" data-boss-notes>${esc(day.boss?.notes || '')}</textarea>
           <div class="row row--wrap" style="margin-top:12px">
             <button class="btn ${day.boss?.done ? 'btn--ghost-light' : 'btn--gold'}" data-action="boss">${day.boss?.done ? '取消完成' : '完成 Boss'}</button>
-            <button class="btn btn--ghost-light" data-action="record">🎙️ 直接錄音</button>
+            <button class="btn btn--ghost-light" data-action="record">${icon('mic')}直接錄音</button>
           </div>
         </section>
 
@@ -220,7 +223,7 @@ export const dashboardView = {
       btns.forEach((btn) => {
         const i = Number(btn.dataset.timer);
         const isActive = session.active?.taskIndex === i && session.running;
-        btn.textContent = isActive ? '⏸ 暫停' : '▶︎ 開始計時';
+        btn.innerHTML = isActive ? `${icon('pause')}暫停` : `${icon('play')}開始計時`;
         btn.closest('.quest')?.classList.toggle('is-active', isActive);
       });
     });

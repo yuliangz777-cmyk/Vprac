@@ -2,7 +2,8 @@
 
 import { state, stats, ensureToday, subscribe, onAchievement, todayKey, setProfile, saveNow } from './state.js';
 import { registerAll, start, navigate, render as renderRoute, onRouteChange } from './router.js';
-import { applyTheme, watchSystemTheme } from './theme.js';
+import { applyPalette, applyTypeface, watchSystemTheme } from './theme.js';
+import { icon, goldGradientDefs } from './icons.js';
 import { session } from './session.js';
 import { audio } from './audio.js';
 import { $, $$, esc, toast, formatClock, isIOS, isStandalone, openModal } from './util.js';
@@ -40,13 +41,13 @@ function renderNav() {
 
   side.innerHTML = sideItems.map((v) => `
     <button class="nav-btn" data-nav="${v.id}">
-      <span class="nav-btn__icon">${v.icon}</span><span>${esc(v.label)}</span>
+      <span class="nav-btn__icon">${icon(v.icon)}</span><span>${esc(v.label)}</span>
     </button>`).join('');
 
   tabs.innerHTML = PRIMARY.map((id) => {
     const v = VIEWS.find((x) => x.id === id);
     return `<button class="tab" data-nav="${v.id}">
-      <span class="tab__icon">${v.icon}</span><span class="tab__label">${esc(v.label)}</span>
+      <span class="tab__icon">${icon(v.icon)}</span><span class="tab__label">${esc(v.label)}</span>
     </button>`;
   }).join('');
 
@@ -68,10 +69,10 @@ function syncNav(route) {
 function syncHeader() {
   const s = stats();
   $('#sideXp').textContent = s.xp;
-  $('#sideLevel').textContent = `LV.${s.level}`;
+  $('#sideLevel').textContent = s.level;
   $('#sideStreak').textContent = s.streak;
-  $('#headerStreak').textContent = `🔥 ${s.streak}`;
-  $('#headerLevel').textContent = `LV.${s.level}`;
+  $('#headerStreak').textContent = `Streak ${s.streak}`;
+  $('#headerLevel').textContent = `Lv ${s.level}`;
 }
 
 /* -------------------------------------------------------- practice bar */
@@ -87,14 +88,14 @@ function renderPracticeBar() {
   bar.hidden = false;
   bar.innerHTML = `
     ${active ? `
-      <button class="bar-btn" data-bar="toggle">${session.running ? '⏸' : '▶︎'}</button>
+      <button class="bar-btn" data-bar="toggle">${session.running ? icon('pause') : icon('play')}</button>
       <div class="bar-info">
         <strong data-bar-time>${formatClock(session.elapsed())}</strong>
         <span>${esc(active.title)}</span>
       </div>
-      <button class="bar-btn" data-bar="stop">■</button>` : '<div class="bar-info"><strong>練習工具運作中</strong><span>點擊調整</span></div>'}
-    ${metroOn ? '<button class="bar-chip" data-bar="metro">🥁 停止</button>' : ''}
-    ${droneOn ? '<button class="bar-chip" data-bar="drone">🎵 停止</button>' : ''}`;
+      <button class="bar-btn" data-bar="stop">${icon('stop')}</button>` : '<div class="bar-info"><strong>練習工具運作中</strong><span>點擊調整</span></div>'}
+    ${metroOn ? `<button class="bar-chip" data-bar="metro">${icon('metronome')}停止</button>` : ''}
+    ${droneOn ? `<button class="bar-chip" data-bar="drone">${icon('tone')}停止</button>` : ''}`;
 
   $$('[data-bar]', bar).forEach((btn) => btn.addEventListener('click', () => {
     const action = btn.dataset.bar;
@@ -194,8 +195,10 @@ function showUpdateBanner(reg) {
 /* ---------------------------------------------------------------- boot */
 
 function boot() {
-  applyTheme(state.settings.theme || 'auto');
-  watchSystemTheme(() => state.settings.theme || 'auto');
+  applyPalette(state.settings.palette || state.settings.theme || 'auto');
+  watchSystemTheme(() => state.settings.palette || state.settings.theme || 'auto');
+  applyTypeface(state.settings.typeface || 'serif');
+  document.body.insertAdjacentHTML('afterbegin', goldGradientDefs());
   audio.a4 = state.settings.a4 || 440;
 
   ensureToday();
@@ -220,6 +223,7 @@ function boot() {
     if (document.visibilityState === 'visible') checkDayRollover();
   });
 
+  $('#menuBtn').innerHTML = icon('menu');
   $('#menuBtn').addEventListener('click', () => document.body.classList.toggle('nav-open'));
   $('#navScrim').addEventListener('click', () => document.body.classList.remove('nav-open'));
 

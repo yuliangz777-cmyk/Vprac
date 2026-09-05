@@ -4,13 +4,14 @@ import {
   state, ensureToday, todayKey, setCheck, setDayField, addWeeklyReview, removeWeeklyReview,
 } from '../state.js';
 import { pageHead, sectionTitle, progressBar, emptyState, card } from '../components.js';
+import { icon } from '../icons.js';
 import { $, $$, esc, toast, formatDate, weekLabel, confirmDialog } from '../util.js';
 
 export const reviewView = {
   id: 'review',
   label: '驗收',
   title: '驗收與回顧',
-  icon: '✅',
+  icon: 'checkCircle',
   primary: true,
 
   mount(root) {
@@ -67,12 +68,12 @@ export const reviewView = {
             <article class="card review-entry">
               <div class="row row--between">
                 <strong>${esc(formatDate(w.date))}</strong>
-                <button class="icon-btn" data-del-review="${esc(w.id)}" aria-label="刪除">🗑</button>
+                <button class="icon-btn" data-del-review="${esc(w.id)}" aria-label="刪除">${icon('trash')}</button>
               </div>
               ${w.wins ? `<p><b>進步：</b>${esc(w.wins)}</p>` : ''}
               ${w.fixes ? `<p><b>修正：</b>${esc(w.fixes)}</p>` : ''}
             </article>`).join('')
-            : emptyState('📓', '還沒有週回顧', '每週一次，寫 3 項進步與 3 項修正就好。')}
+            : emptyState('book', '還沒有週回顧', '每週一次，寫 3 項進步與 3 項修正就好。')}
         </div>`;
 
       $$('[data-check]', root).forEach((box) => box.addEventListener('change', () => {

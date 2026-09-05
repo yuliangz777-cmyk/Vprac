@@ -3,13 +3,14 @@
 import { state, stats } from '../state.js';
 import { ACHIEVEMENTS } from '../content.js';
 import { pageHead, statTile, progressBar } from '../components.js';
+import { icon } from '../icons.js';
 import { esc, formatMinutes } from '../util.js';
 
 export const achievementsView = {
   id: 'achievements',
   label: '成就',
   title: '成就',
-  icon: '🏅',
+  icon: 'medal',
 
   mount(root) {
     const s = stats();
@@ -30,7 +31,7 @@ export const achievementsView = {
       <div class="badges">
         ${ACHIEVEMENTS.map((a) => `
           <article class="badge-card ${unlocked.has(a.id) ? 'is-on' : ''}">
-            <div class="badge-card__icon">${a.icon}</div>
+            <div class="badge-card__icon">${icon(a.icon)}</div>
             <strong>${esc(a.name)}</strong>
             <p class="muted small">${esc(a.desc)}</p>
           </article>`).join('')}

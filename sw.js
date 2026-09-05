@@ -1,7 +1,7 @@
 /* Violin Quest Pro service worker.
  * Bump CACHE_VERSION together with APP_VERSION in assets/js/version.js. */
 
-const CACHE_VERSION = '1.0.0';
+const CACHE_VERSION = '1.1.0';
 const CACHE_NAME = `violin-quest-${CACHE_VERSION}`;
 
 const PRECACHE = [
@@ -9,8 +9,16 @@ const PRECACHE = [
   './index.html',
   './manifest.webmanifest',
   './assets/css/app.css',
+  './assets/css/fonts.css',
+  './assets/fonts/jost-latin.woff2',
+  './assets/fonts/jost-latin-ext.woff2',
+  './assets/fonts/cormorant-latin.woff2',
+  './assets/fonts/cormorant-latin-ext.woff2',
+  './assets/fonts/marcellus-latin.woff2',
+  './assets/fonts/marcellus-latin-ext.woff2',
   './assets/js/main.js',
   './assets/js/util.js',
+  './assets/js/icons.js',
   './assets/js/state.js',
   './assets/js/content.js',
   './assets/js/components.js',

@@ -2,6 +2,7 @@
 
 import { state, stats, addCompetition, updateCompetition, removeCompetition, setProfile } from '../state.js';
 import { pageHead, sectionTitle, statTile, emptyState, progressBar } from '../components.js';
+import { icon } from '../icons.js';
 import { $, $$, esc, openModal, confirmDialog, toast, dateKey, daysBetween, formatDate } from '../util.js';
 
 function compForm(entry = {}) {
@@ -37,7 +38,7 @@ export const competitionView = {
   id: 'competition',
   label: '比賽',
   title: '比賽中心',
-  icon: '🏆',
+  icon: 'trophy',
 
   mount(root) {
     const render = () => {
@@ -70,7 +71,7 @@ export const competitionView = {
           </div>
         </section>
 
-        ${sectionTitle('比賽紀錄', '<button class="btn btn--sm btn--primary" data-add>＋ 新增紀錄</button>')}
+        ${sectionTitle('比賽紀錄', `<button class="btn btn--sm btn--primary" data-add>${icon('plus')}新增紀錄</button>`)}
         <div class="stack">
           ${state.competitions.length ? state.competitions.map((c) => `
             <article class="card event">
@@ -80,7 +81,7 @@ export const competitionView = {
                 <p class="muted">${esc(c.result || '待賽')}${c.notes ? ` · ${esc(c.notes)}` : ''}</p>
               </div>
             </article>`).join('')
-            : emptyState('🏅', '還沒有比賽紀錄', '把報名中、準備中、已完成的賽事都記下來，包含評審回饋。')}
+            : emptyState('trophy', '還沒有比賽紀錄', '把報名中、準備中、已完成的賽事都記下來，包含評審回饋。')}
         </div>`;
 
       $$('[data-p]', root).forEach((input) => input.addEventListener('change', () => {

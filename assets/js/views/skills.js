@@ -16,7 +16,7 @@ export const skillsView = {
   id: 'skills',
   label: '能力',
   title: '能力面板',
-  icon: '📊',
+  icon: 'radar',
   primary: true,
 
   mount(root) {
@@ -69,7 +69,7 @@ export const skillsView = {
                     ${SKILL_KEYS.map((k) => `<i title="${esc(skillLabel(k))} ${h.skills[k]}" style="height:${Math.max(4, h.skills[k])}%"></i>`).join('')}
                   </div>
                 </div>`).join('')}</div>`
-            : emptyState('📈', '還沒有快照', '每週按一次「存本週快照」，就能看到能力曲線。')}
+            : emptyState('chart', '還沒有快照', '每週按一次「存本週快照」，就能看到能力曲線。')}
         </section>`;
 
       $$('[data-skill]', root).forEach((input) => {

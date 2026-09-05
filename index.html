@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Violin Quest Pro</title>
 <meta name="description" content="離線可用的小提琴訓練 App：自適應每日任務、能力面板、節拍器／持續音／調音器、錄音驗收與國際賽任務線。">
-<meta name="theme-color" content="#f4f6f8">
+<meta name="theme-color" content="#f6f1e8">
 <meta name="color-scheme" content="light dark">
 
 <link rel="manifest" href="./manifest.webmanifest">
@@ -19,6 +19,9 @@
 <meta name="apple-mobile-web-app-title" content="Violin Quest">
 <meta name="format-detection" content="telephone=no">
 
+<link rel="preload" href="./assets/fonts/cormorant-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="./assets/fonts/jost-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="./assets/fonts/marcellus-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="./assets/css/app.css">
 </head>
 <body>
@@ -31,9 +34,9 @@
     </div>
     <nav class="side-nav" id="sideNav"></nav>
     <div class="side-foot">
-      <div class="mini"><span>等級</span><strong id="sideLevel">LV.1</strong></div>
-      <div class="mini"><span>總 XP</span><strong id="sideXp">0</strong></div>
-      <div class="mini"><span>連勝</span><strong id="sideStreak">0</strong></div>
+      <div class="mini"><span>Level</span><strong id="sideLevel">1</strong></div>
+      <div class="mini"><span>XP</span><strong id="sideXp">0</strong></div>
+      <div class="mini"><span>Streak</span><strong id="sideStreak">0</strong></div>
     </div>
   </aside>
   <div class="nav-scrim" id="navScrim"></div>
@@ -42,7 +45,7 @@
     <header class="topbar">
       <button class="icon-btn" id="menuBtn" aria-label="選單">☰</button>
       <span class="topbar__brand"><span class="brand__mark brand__mark--sm">VQ</span> Violin Quest</span>
-      <span class="topbar__stats"><b id="headerLevel">LV.1</b><b id="headerStreak">🔥 0</b></span>
+      <span class="topbar__stats"><b id="headerLevel">Lv 1</b><b id="headerStreak">Streak 0</b></span>
     </header>
     <main class="view" id="view"></main>
   </div>

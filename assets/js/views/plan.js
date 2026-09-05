@@ -9,7 +9,7 @@ export const planView = {
   id: 'plan',
   label: '任務線',
   title: '國際賽任務線',
-  icon: '🗺️',
+  icon: 'path',
 
   mount(root) {
     const s = stats();

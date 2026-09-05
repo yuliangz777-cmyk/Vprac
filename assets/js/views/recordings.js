@@ -4,13 +4,14 @@ import { recordingsDB } from '../db.js';
 import { TakeRecorder, saveTake, recorderSupported } from '../recorder.js';
 import { linkRecording, unlinkRecording, ensureToday, todayKey } from '../state.js';
 import { pageHead, sectionTitle, emptyState, statTile } from '../components.js';
+import { icon } from '../icons.js';
 import { $, $$, esc, toast, confirmDialog, formatClock, formatDate, formatBytes } from '../util.js';
 
 export const recordingsView = {
   id: 'recordings',
   label: '錄音',
   title: '錄音庫',
-  icon: '🎙️',
+  icon: 'mic',
 
   mount(root, params = []) {
     const recorder = new TakeRecorder();
@@ -46,7 +47,7 @@ export const recordingsView = {
           </label>
           <div class="row row--center" style="margin-top:12px">
             <button class="btn btn--big ${recorder.state === 'recording' ? 'btn--danger' : 'btn--primary'}" data-rec-toggle ${recorderSupported() ? '' : 'disabled'}>
-              ${recorder.state === 'recording' ? '■ 停止並儲存' : '● 開始錄音'}
+              ${recorder.state === 'recording' ? `${icon('stop')}停止並儲存` : `${icon('record')}開始錄音`}
             </button>
           </div>
           ${recorderSupported() ? '' : '<p class="muted small" style="text-align:center;margin-top:10px">此瀏覽器不支援錄音。iPhone 請用 Safari 開啟。</p>'}
@@ -70,16 +71,16 @@ export const recordingsView = {
                       <strong>${esc(r.title)}</strong>
                       <p class="muted small">${formatClock(r.seconds)} · ${formatBytes(r.size)}</p>
                     </div>
-                    <button class="icon-btn" data-del="${esc(r.id)}" aria-label="刪除">🗑</button>
+                    <button class="icon-btn" data-del="${esc(r.id)}" aria-label="刪除">${icon('trash')}</button>
                   </div>
                   <audio controls preload="none" src="${objectURL(r.blob)}"></audio>
                   <div class="rec__rate">
-                    ${[1, 2, 3, 4, 5].map((n) => `<button class="star ${r.rating >= n ? 'is-on' : ''}" data-rate="${esc(r.id)}:${n}" aria-label="評分 ${n}">★</button>`).join('')}
+                    ${[1, 2, 3, 4, 5].map((n) => `<button class="star ${r.rating >= n ? 'is-on' : ''}" data-rate="${esc(r.id)}:${n}" aria-label="評分 ${n}">${icon('star')}</button>`).join('')}
                     <input class="input input--sm" data-note="${esc(r.id)}" placeholder="這個 take 的 3 個問題…" value="${esc(r.note || '')}">
                   </div>
                 </article>`).join('')}
             </div>`).join('')
-            : emptyState('🎙️', '還沒有錄音', '今天就錄一次不重來的 take，明天才有東西可以比較。')}
+            : emptyState('mic', '還沒有錄音', '今天就錄一次不重來的 take，明天才有東西可以比較。')}
         </div>`;
 
       bind();
@@ -106,7 +107,7 @@ export const recordingsView = {
               const meter = $('[data-meter]', root);
               if (meter) meter.style.width = `${Math.min(100, peak * 140)}%`;
             });
-            toggle.textContent = '■ 停止並儲存';
+            toggle.innerHTML = `${icon('stop')}停止並儲存`;
             toggle.classList.replace('btn--primary', 'btn--danger');
             $('.recorder__dot', root)?.classList.add('is-live');
             meterTimer = setInterval(() => {

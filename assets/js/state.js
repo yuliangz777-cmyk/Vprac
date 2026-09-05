@@ -31,7 +31,7 @@ export function defaultState() {
       competitionDate: '',
       competitionName: '',
     },
-    settings: { theme: 'auto', a4: 440, haptics: true, keepAwake: true, autoPlan: true },
+    settings: { palette: 'auto', typeface: 'serif', a4: 440, haptics: true, keepAwake: true, autoPlan: true },
     skills: { intonation: 52, bow: 48, shifting: 50, rhythm: 65, tone: 55, musicality: 58, stage: 45, stamina: 50 },
     skillHistory: [],
     repertoire: [

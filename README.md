@@ -72,7 +72,32 @@ npm run serve          # 或 python3 -m http.server 8080
 
 ---
 
-## 三、資料與隱私
+## 三、外觀：四種暖色系 × 一套字體
+
+到「設定 → 色系」隨時切換，立即生效、記在裝置上。
+
+| 色系 | 性格 | 適合 |
+| --- | --- | --- |
+| **香檳象牙** Champagne Ivory | 暖象牙底、古典金、咖啡棕字 | 白天、拍影片、要「精品文件」感 |
+| **琥珀夜** Amber Noir | 濃縮咖啡黑、拉絲金、象牙白字 | 夜間練琴、影片最有戲劇性 |
+| **勃根地** Burgundy Velvet | 深酒紅絨、金箔、奶油白字 | 演奏廳／琴盒絨布的聯想 |
+| **赤陶** Terracotta Sun | 暖沙底、赤陶橘、青銅金 | 明亮溫暖、最不刺眼 |
+
+預設是「跟隨系統」：白天香檳象牙、夜間琥珀夜。
+
+字體採三層搭配，全部內建、離線可用：
+
+- **Cormorant Garamond**（高對比襯線）— 標題、大數字、BPM、計時器
+- **Marcellus**（碑刻羅馬體）— 全大寫、寬字距的小標籤與品牌字
+- **Jost**（幾何無襯線）— 內文、按鈕、表單
+
+中文標題預設用系統內建的**宋體**（iOS 的 Songti TC）搭配 Cormorant，雜誌感最強；
+不喜歡的話到「設定 → 標題字體」可切換成**黑體**，英文仍保持襯線。
+數字全部強制使用等高等寬字形，所以 `Op.61`、`72 BPM`、`1:05` 不會出現舊式數字跳動。
+
+介面上的圖示全部是自繪的 1.5px 線性 SVG，沒有 emoji。
+
+## 四、資料與隱私
 
 - 訓練資料存在 `localStorage`，錄音存在 `IndexedDB`，**都不會離開你的裝置**，沒有任何後端。
 - 麥克風只在你按下「開始調音」或「開始錄音」時啟用，離開頁面就會關閉。
@@ -81,13 +106,15 @@ npm run serve          # 或 python3 -m http.server 8080
 
 ---
 
-## 四、開發
+## 五、開發
 
 ```
 index.html                 App 外殼
 manifest.webmanifest       PWA manifest（含 maskable icon 與捷徑）
 sw.js                      Service Worker：離線快取與更新提示
-assets/css/app.css         設計系統（淺／深色、iOS 安全區）
+assets/css/app.css         設計系統（4 色系、字級、iOS 安全區）
+assets/css/fonts.css       自架字體宣告（SIL OFL）
+assets/fonts/              Cormorant / Marcellus / Jost（woff2，共 ~135 KB）
 assets/js/
   main.js                  啟動、導覽、Service Worker、跨日換日
   state.js                 狀態、schema 遷移、統計、XP（由紀錄推導）
@@ -95,7 +122,9 @@ assets/js/
   audio.js                 節拍器／持續音／調音器引擎
   recorder.js  db.js       錄音與 IndexedDB
   session.js               全域練習計時器
-  router.js  theme.js  components.js  util.js
+  icons.js                 線性 SVG 圖示集
+  theme.js                 色系與標題字體
+  router.js  components.js  util.js
   views/                   12 個頁面
 tools/make_icons.py        產生所有 icon（純 Python，無相依套件）
 tests/app.test.js          單元測試（node --test）
@@ -112,7 +141,7 @@ npm run icons     # 重新產生 icon
 
 ---
 
-## 五、已知限制
+## 六、已知限制
 
 - iOS 的靜音實體開關會讓 Web Audio 沒聲音，節拍器沒聲音時請先確認側邊開關。
 - 錄音格式在 iOS 是 `audio/mp4`，其他瀏覽器多為 `webm`；檔案只在本機播放，不需轉檔。

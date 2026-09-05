@@ -3,22 +3,23 @@
 import { state, stats } from '../state.js';
 import { navigate } from '../router.js';
 import { pageHead, statTile } from '../components.js';
+import { icon } from '../icons.js';
 import { $$, esc, formatMinutes, isIOS, isStandalone } from '../util.js';
 
 const LINKS = [
-  { id: 'plan', icon: '🗺️', label: '國際賽任務線', hint: 'LV.1 → LV.7 的晉級條件' },
-  { id: 'competition', icon: '🏆', label: '比賽中心', hint: '倒數、目標與比賽紀錄' },
-  { id: 'calendar', icon: '📅', label: '訓練日曆', hint: '每天練了多久、是否達標' },
-  { id: 'recordings', icon: '🎙️', label: '錄音庫', hint: '不重來的 take 都放這裡' },
-  { id: 'achievements', icon: '🏅', label: '成就', hint: '長期累積的證據' },
-  { id: 'settings', icon: '⚙️', label: '設定與備份', hint: '個人資料、驗收標準、匯出' },
+  { id: 'plan', icon: 'path', label: '國際賽任務線', hint: 'LV.1 → LV.7 的晉級條件' },
+  { id: 'competition', icon: 'trophy', label: '比賽中心', hint: '倒數、目標與比賽紀錄' },
+  { id: 'calendar', icon: 'calendar', label: '訓練日曆', hint: '每天練了多久、是否達標' },
+  { id: 'recordings', icon: 'mic', label: '錄音庫', hint: '不重來的 take 都放這裡' },
+  { id: 'achievements', icon: 'medal', label: '成就', hint: '長期累積的證據' },
+  { id: 'settings', icon: 'settings', label: '設定與備份', hint: '個人資料、驗收標準、匯出' },
 ];
 
 export const moreView = {
   id: 'more',
   label: '更多',
   title: '更多',
-  icon: '⋯',
+  icon: 'more',
   primary: true,
 
   mount(root) {
@@ -32,9 +33,9 @@ export const moreView = {
       </div>
       <nav class="menu">
         ${LINKS.map((l) => `<button class="menu__item" data-go="${l.id}">
-          <span class="menu__icon">${l.icon}</span>
+          <span class="menu__icon">${icon(l.icon)}</span>
           <span class="menu__text"><strong>${esc(l.label)}</strong><small>${esc(l.hint)}</small></span>
-          <span class="menu__chev">›</span>
+          <span class="menu__chev">${icon('chevron')}</span>
         </button>`).join('')}
       </nav>
       ${isIOS() && !isStandalone() ? `

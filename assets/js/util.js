@@ -1,5 +1,7 @@
 // Small DOM / date / formatting helpers shared by every view.
 
+import { icon } from './icons.js';
+
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -115,7 +117,7 @@ export function openModal(title, body, onMount) {
   modal.innerHTML = `
     <div class="modal__head">
       <h2>${esc(title)}</h2>
-      <button class="icon-btn" data-close aria-label="關閉">✕</button>
+      <button class="icon-btn" data-close aria-label="關閉">${icon('close')}</button>
     </div>
     <div class="modal__body">${body}</div>`;
   backdrop.classList.remove('hidden');

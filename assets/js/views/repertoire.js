@@ -3,6 +3,7 @@
 import { state, addRepertoire, updateRepertoire, removeRepertoire } from '../state.js';
 import { STATUS_LABELS } from '../content.js';
 import { pageHead, sectionTitle, progressBar, emptyState, statTile } from '../components.js';
+import { icon } from '../icons.js';
 import { $, $$, esc, openModal, confirmDialog, toast } from '../util.js';
 
 function form(entry = {}) {
@@ -34,7 +35,7 @@ export const repertoireView = {
   id: 'repertoire',
   label: '曲目',
   title: '曲目庫',
-  icon: '🎼',
+  icon: 'book',
   primary: true,
 
   mount(root) {
@@ -50,7 +51,7 @@ export const repertoireView = {
           ${statTile('可上場', ready, '成熟度 ≥ 80%', ready ? 'good' : '')}
           ${statTile('平均成熟度', `${avg}%`, '全部曲目')}
         </div>
-        ${sectionTitle('清單', '<button class="btn btn--sm btn--primary" data-add>＋ 新增曲目</button>')}
+        ${sectionTitle('清單', `<button class="btn btn--sm btn--primary" data-add>${icon('plus')}新增曲目</button>`)}
         <div class="rep-list">
           ${list.length ? list.map((r) => `
             <article class="card rep" data-id="${esc(r.id)}">
@@ -69,7 +70,7 @@ export const repertoireView = {
               </div>
               ${r.notes ? `<p class="rep__notes">${esc(r.notes)}</p>` : ''}
             </article>`).join('')
-            : emptyState('🎻', '曲目庫是空的', '把老師給的曲目、比賽規章要求的曲目都放進來。')}
+            : emptyState('note', '曲目庫是空的', '把老師給的曲目、比賽規章要求的曲目都放進來。')}
         </div>`;
 
       $('[data-add]', root).addEventListener('click', () => {

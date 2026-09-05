@@ -3,6 +3,7 @@
 import { state, dayMinutes, isDayComplete, todayKey } from '../state.js';
 import { skillLabel } from '../content.js';
 import { pageHead, statTile, emptyState } from '../components.js';
+import { icon } from '../icons.js';
 import { $$, esc, openModal, dateKey, formatDate, formatMinutes } from '../util.js';
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
@@ -11,7 +12,7 @@ export const calendarView = {
   id: 'calendar',
   label: '日曆',
   title: '訓練日曆',
-  icon: '📅',
+  icon: 'calendar',
 
   mount(root) {
     const now = new Date();
@@ -44,7 +45,7 @@ export const calendarView = {
         cells += `<button class="${classes}" data-day="${key}">
           <span class="cal__num">${d}</span>
           ${minutes ? `<span class="cal__min">${minutes}</span>` : ''}
-          ${day?.boss?.done ? '<i class="cal__boss">👑</i>' : ''}
+          ${day?.boss?.done ? `<i class="cal__boss">${icon('crown')}</i>` : ''}
         </button>`;
       }
 
@@ -57,9 +58,9 @@ export const calendarView = {
         </div>
         <section class="card">
           <div class="row row--between cal__head">
-            <button class="icon-btn" data-move="-1" aria-label="上個月">‹</button>
+            <button class="icon-btn" data-move="-1" aria-label="上個月">${icon('chevronLeft')}</button>
             <strong>${year} 年 ${month + 1} 月</strong>
-            <button class="icon-btn" data-move="1" aria-label="下個月">›</button>
+            <button class="icon-btn" data-move="1" aria-label="下個月">${icon('chevron')}</button>
           </div>
           <div class="cal">
             ${WEEKDAYS.map((w) => `<div class="cal__dow">${w}</div>`).join('')}
@@ -86,7 +87,7 @@ export const calendarView = {
       const day = state.days[key];
       const minutes = dayMinutes(day);
       const body = !day || (!day.tasks.length && !minutes)
-        ? emptyState('🌙', '這天沒有紀錄', '休息也是訓練的一部分。')
+        ? emptyState('moon', '這天沒有紀錄', '休息也是訓練的一部分。')
         : `
           <div class="tiles tiles--sm">
             ${statTile('練習時間', formatMinutes(minutes))}
