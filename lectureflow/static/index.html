@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="即時聽講轉錄、自動筆記與逐字稿問答">
+<title>LectureFlow</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23171717'/%3E%3Crect x='13' y='7' width='6' height='12' rx='3' fill='%23fff'/%3E%3Cpath d='M10 16a6 6 0 0 0 12 0' stroke='%23fff' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3Cpath d='M16 22v3' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="app">
+<header class="top">
+  <div class="brand">LectureFlow</div>
+  <div class="topright">
+    <span id="dot" class="dot"></span>
+    <span id="state">尚未開始</span>
+    <span id="timer" class="timer">00:00</span>
+    <span id="mode" class="mode">檢查中</span>
+  </div>
+</header>
+
+<main class="grid">
+  <section class="panel active" data-panel="transcript">
+    <div class="head">
+      <div>
+        <div class="title">即時逐字稿</div>
+        <div class="sub">持續收音，在語句停頓處切段轉寫</div>
+      </div>
+      <div class="actions">
+        <button id="start" class="btn primary">開始聽講</button>
+        <button id="stop" class="btn" disabled>停止</button>
+        <button id="clear" class="btn">清空</button>
+      </div>
+    </div>
+    <div class="body">
+      <textarea id="transcript" class="transcript" placeholder="按「開始聽講」後允許麥克風權限。你也可以直接在這裡輸入或貼上文字。"></textarea>
+    </div>
+    <div class="livebar">
+      <span id="liveInfo">等待開始</span>
+      <span id="backlog"></span>
+      <span><strong id="chars">0</strong> 字</span>
+    </div>
+    <div class="livebar" style="padding-top:0;border-top:0">
+      <div id="level" class="meter" style="flex:1" aria-hidden="true"></div>
+    </div>
+  </section>
+
+  <section class="panel" data-panel="notes">
+    <div class="head">
+      <div>
+        <div class="title">自動筆記</div>
+        <div class="sub">摘要、名詞、考點與待追問內容</div>
+      </div>
+      <div class="actions">
+        <button id="summarize" class="btn primary">立即整理</button>
+        <button id="export" class="btn">匯出</button>
+      </div>
+    </div>
+    <div class="body" id="notes">
+      <div class="empty">開始聽講後，系統會定期更新筆記。也可以按「立即整理」。</div>
+    </div>
+    <div class="livebar"><span id="noteStatus">尚未整理</span><span>約每 30 秒自動更新</span></div>
+  </section>
+
+  <section class="panel" data-panel="qa">
+    <div class="head">
+      <div>
+        <div class="title">文字問答</div>
+        <div class="sub">回答以目前逐字稿為依據</div>
+      </div>
+    </div>
+    <div class="qa">
+      <div id="messages" class="messages">
+        <div class="msg">
+          <div class="who">系統</div>
+          <div class="bubble">可以問「老師剛才的結論是什麼」、「把這段整理成考前重點」或「這個名詞在課堂上怎麼定義」。</div>
+        </div>
+      </div>
+      <div class="ask">
+        <div class="askrow">
+          <input id="question" placeholder="輸入問題" autocomplete="off">
+          <button id="ask" class="btn primary">送出</button>
+        </div>
+        <div class="chips">
+          <button class="chip" data-q="老師剛剛的結論是什麼？">剛才的結論</button>
+          <button class="chip" data-q="整理成三個考試重點">三個考點</button>
+          <button class="chip" data-q="目前有哪些重要名詞？">重要名詞</button>
+        </div>
+        <div class="saving">內容只儲存在這台裝置的瀏覽器，金鑰只留在本機後端。</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<nav class="mobiletabs">
+  <button class="tab active" data-tab="transcript">逐字稿</button>
+  <button class="tab" data-tab="notes">筆記</button>
+  <button class="tab" data-tab="qa">問答</button>
+</nav>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+</div>
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

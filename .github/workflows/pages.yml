@@ -54,6 +54,7 @@ jobs:
         run: |
           mkdir -p _site
           rsync -a --exclude '.git' --exclude '.github' --exclude 'node_modules' \
+                --exclude 'lectureflow' \
                 --exclude 'tests' --exclude 'tools' --exclude '.tmp' \
                 --exclude 'package-lock.json' ./ _site/
       - uses: actions/upload-pages-artifact@v3
