@@ -6,6 +6,9 @@ on:
     branches:
       - main
       - claude/complete-app-development-eq0ote
+      # Temporary: publishes the LectureFlow PWA for review before it merges.
+      # Remove this line once the pull request lands.
+      - claude/project-realtime-improvement-cem3zu
   workflow_dispatch:
 
 permissions:
