@@ -255,9 +255,66 @@ button, input, textarea { font: inherit; color: inherit; }
   .tab { border: 0; background: transparent; padding: 9px; border-radius: 10px; color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer; }
   .tab.active { background: var(--dark); color: var(--on-dark); }
   .top { padding: 0 13px; }
+  /* Stack the header so three buttons stay on one row instead of wrapping
+     the last one onto a line of its own. */
+  .head { flex-direction: column; align-items: stretch; gap: 9px; }
+  .actions { justify-content: stretch; }
+  .actions .btn { flex: 1; text-align: center; }
   .mode { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ------------------------------------------------------------- setup --- */
+
+.sheet {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 0;
+  background: var(--panel);
+  color: var(--text);
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(86vh, 720px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .22);
+}
+.sheet::backdrop { background: rgba(0, 0, 0, .38); backdrop-filter: blur(2px); }
+
+.sheetbody { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.sheetbody h2 { font-size: 15px; margin: 0; font-weight: 750; }
+.sheetbody .hint { font-size: 11px; color: var(--muted); margin: 0; line-height: 1.6; }
+
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field > span { font-size: 11px; font-weight: 650; color: var(--muted); }
+.field select,
+.field input {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 9px 10px;
+  font-size: 13px;
+  outline: none;
+  width: 100%;
+}
+.field select:focus-visible,
+.field input:focus-visible,
+.btn:focus-visible,
+.chip:focus-visible { outline: 2px solid var(--green); outline-offset: 1px; }
+
+.warn {
+  font-size: 11px;
+  line-height: 1.65;
+  margin: 0;
+  padding: 10px 11px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--red) 30%, var(--line));
+  background: color-mix(in srgb, var(--red) 7%, transparent);
+}
+
+.sheetactions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
+
+button.mode { cursor: pointer; font-size: 12px; }
+button.mode:hover { background: var(--soft); }
+
+.livebar .meter { flex: 1; }

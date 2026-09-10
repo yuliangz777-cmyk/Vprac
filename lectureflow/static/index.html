@@ -3,11 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="color-scheme" content="light dark">
-<meta name="description" content="即時聽講轉錄、自動筆記與逐字稿問答">
 <title>LectureFlow</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23171717'/%3E%3Crect x='13' y='7' width='6' height='12' rx='3' fill='%23fff'/%3E%3Cpath d='M10 16a6 6 0 0 0 12 0' stroke='%23fff' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3Cpath d='M16 22v3' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="/static/styles.css">
+<meta name="description" content="即時聽講轉錄、自動筆記與逐字稿問答，可加入主畫面離線啟動。">
+<meta name="theme-color" content="#f7f7f5">
+<meta name="color-scheme" content="light dark">
+
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/favicon.png" sizes="64x64">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+
+<!-- iOS home-screen behaviour -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="LectureFlow">
+<meta name="format-detection" content="telephone=no">
+
+<link rel="stylesheet" href="./styles.css">
 </head>
 <body>
 <div class="app">
@@ -17,7 +29,7 @@
     <span id="dot" class="dot"></span>
     <span id="state">尚未開始</span>
     <span id="timer" class="timer">00:00</span>
-    <span id="mode" class="mode">檢查中</span>
+    <button id="settings" class="mode" type="button" title="設定">檢查中</button>
   </div>
 </header>
 
@@ -38,12 +50,12 @@
       <textarea id="transcript" class="transcript" placeholder="按「開始聽講」後允許麥克風權限。你也可以直接在這裡輸入或貼上文字。"></textarea>
     </div>
     <div class="livebar">
+      <div id="level" class="meter" aria-hidden="true"></div>
+    </div>
+    <div class="livebar">
       <span id="liveInfo">等待開始</span>
       <span id="backlog"></span>
       <span><strong id="chars">0</strong> 字</span>
-    </div>
-    <div class="livebar" style="padding-top:0;border-top:0">
-      <div id="level" class="meter" style="flex:1" aria-hidden="true"></div>
     </div>
   </section>
 
@@ -88,7 +100,7 @@
           <button class="chip" data-q="整理成三個考試重點">三個考點</button>
           <button class="chip" data-q="目前有哪些重要名詞？">重要名詞</button>
         </div>
-        <div class="saving">內容只儲存在這台裝置的瀏覽器，金鑰只留在本機後端。</div>
+        <div class="saving" id="saveState">課堂內容只留在這台裝置。</div>
       </div>
     </div>
   </section>
@@ -99,8 +111,63 @@
   <button class="tab" data-tab="notes">筆記</button>
   <button class="tab" data-tab="qa">問答</button>
 </nav>
+
+<dialog id="setup" class="sheet">
+  <form method="dialog" class="sheetbody">
+    <h2>設定</h2>
+    <p class="hint" id="setupSummary"></p>
+
+    <label class="field">
+      <span>語音辨識</span>
+      <select id="setTranscribe">
+        <option value="auto">自動</option>
+        <option value="backend">本機伺服器</option>
+        <option value="openai">OpenAI API（需金鑰）</option>
+        <option value="browser">瀏覽器辨識（免金鑰）</option>
+      </select>
+    </label>
+
+    <label class="field">
+      <span>筆記與問答</span>
+      <select id="setText">
+        <option value="auto">自動</option>
+        <option value="backend">本機伺服器</option>
+        <option value="anthropic">Claude（需金鑰）</option>
+        <option value="openai">OpenAI（需金鑰）</option>
+        <option value="local">本機規則（免金鑰）</option>
+      </select>
+    </label>
+
+    <label class="field">
+      <span>OpenAI API key</span>
+      <input id="setOpenaiKey" type="password" autocomplete="off" placeholder="sk-...">
+    </label>
+
+    <label class="field">
+      <span>Anthropic API key</span>
+      <input id="setAnthropicKey" type="password" autocomplete="off" placeholder="sk-ant-...">
+    </label>
+
+    <label class="field">
+      <span>語言</span>
+      <input id="setLanguage" autocomplete="off" placeholder="zh，留空為自動偵測">
+    </label>
+
+    <p class="warn" id="keyWarning">
+      填入金鑰後，金鑰會存在這台裝置的瀏覽器裡，並由這個頁面直接呼叫服務商 API。
+      這是讓 App 在沒有電腦的情況下也能運作的代價：任何能操作這台裝置的人都可能取得金鑰。
+      建議另外申請一把有用量上限的金鑰，不要用主要金鑰。不需要時請按「清除金鑰」。
+    </p>
+
+    <div class="sheetactions">
+      <button id="clearKeys" class="btn" type="button">清除金鑰</button>
+      <button id="saveSetup" class="btn primary" value="save">儲存</button>
+    </div>
+  </form>
+</dialog>
+
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </div>
-<script type="module" src="/static/app.js"></script>
+<script type="module" src="./app.js"></script>
 </body>
 </html>

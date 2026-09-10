@@ -181,3 +181,64 @@ export function notesToMarkdown(notes, transcript, meta = {}) {
   lines.push('## 完整逐字稿', '', transcript || '');
   return lines.join('\n');
 }
+
+/** Strip markdown fences and any prose wrapped around a JSON object. */
+export function cleanJsonText(text) {
+  let out = String(text || '').trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim();
+  const start = out.indexOf('{');
+  const end = out.lastIndexOf('}');
+  if (start !== -1 && end > start) out = out.slice(start, end + 1);
+  return out.trim();
+}
+
+function asStringList(value) {
+  if (typeof value === 'string') return value.trim() ? [value.trim()] : [];
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  for (const item of value) {
+    if (typeof item === 'string' && item.trim()) out.push(item.trim());
+    else if (item && typeof item === 'object') {
+      const text = item.text || item.point || item.content;
+      if (typeof text === 'string' && text.trim()) out.push(text.trim());
+    }
+  }
+  return out;
+}
+
+/** Parse a model reply into the notes shape. Never throws.
+ *  Mirrors lectureflow/textproc.py:parse_notes for the direct-API engines,
+ *  which have no backend to do it for them. */
+export function parseNotes(text) {
+  const empty = { summary: [], concepts: [], exam_points: [], open_questions: [], latest: '' };
+  let data;
+  try {
+    data = JSON.parse(cleanJsonText(text));
+  } catch {
+    const stripped = String(text || '').trim();
+    return { ...empty, summary: stripped ? [stripped] : [] };
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return empty;
+
+  const concepts = [];
+  if (Array.isArray(data.concepts)) {
+    for (const item of data.concepts) {
+      if (item && typeof item === 'object') {
+        const term = String(item.term || '').trim();
+        if (term) concepts.push({ term, explanation: String(item.explanation || '').trim() });
+      } else if (typeof item === 'string' && item.trim()) {
+        concepts.push({ term: item.trim(), explanation: '' });
+      }
+    }
+  }
+
+  return {
+    summary: asStringList(data.summary),
+    concepts,
+    exam_points: asStringList(data.exam_points),
+    open_questions: asStringList(data.open_questions),
+    latest: typeof data.latest === 'string' ? data.latest.trim() : '',
+  };
+}

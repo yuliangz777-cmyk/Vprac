@@ -269,3 +269,96 @@ test('segmenter adapts to a noisy room without gating out speech', () => {
   assert.equal(segments.length, 1);
   assert.equal(segments[0].reason, 'pause');
 });
+
+/* -------------------------------------------------------------- notes --- */
+
+import { cleanJsonText, parseNotes } from '../lectureflow/static/text.js';
+import * as config from '../lectureflow/static/settings.js';
+
+test('parseNotes reads a clean object', () => {
+  const notes = parseNotes(JSON.stringify({
+    summary: ['一'], concepts: [{ term: '需求', explanation: '想買的量' }],
+    exam_points: [], open_questions: ['為什麼'], latest: '在講需求',
+  }));
+  assert.deepEqual(notes.summary, ['一']);
+  assert.deepEqual(notes.concepts, [{ term: '需求', explanation: '想買的量' }]);
+  assert.equal(notes.latest, '在講需求');
+});
+
+test('parseNotes survives fences, prose and wrong shapes', () => {
+  assert.deepEqual(parseNotes('好的：\n```json\n{"summary":["甲"]}\n```').summary, ['甲']);
+  assert.deepEqual(parseNotes('模型只回了一段話').summary, ['模型只回了一段話']);
+
+  const loose = parseNotes('{"summary":"單一字串","concepts":["名詞"],"latest":null}');
+  assert.deepEqual(loose.summary, ['單一字串']);
+  assert.deepEqual(loose.concepts, [{ term: '名詞', explanation: '' }]);
+  assert.equal(loose.latest, '');
+
+  const empty = parseNotes('[]');
+  assert.deepEqual(empty.summary, []);
+  assert.deepEqual(empty.concepts, []);
+});
+
+test('cleanJsonText trims fences and surrounding prose', () => {
+  assert.equal(cleanJsonText('```json\n{"a":1}\n```'), '{"a":1}');
+  assert.equal(cleanJsonText('前言 {"a":1} 後記'), '{"a":1}');
+});
+
+/* ------------------------------------------------------------ settings -- */
+
+const BACKEND_READY = { transcribe_ready: true, text_ready: true };
+
+test('auto prefers a backend when one answered', () => {
+  assert.deepEqual(config.resolve(config.DEFAULTS, BACKEND_READY), {
+    transcribe: 'backend', text: 'backend',
+  });
+});
+
+test('auto falls back to a stored key when there is no backend', () => {
+  assert.deepEqual(config.resolve({ ...config.DEFAULTS, openaiKey: 'sk-x' }, null), {
+    transcribe: 'openai', text: 'openai',
+  });
+  // Claude cannot transcribe, so audio has nowhere to go without more setup.
+  assert.deepEqual(config.resolve({ ...config.DEFAULTS, anthropicKey: 'sk-a' }, null), {
+    transcribe: 'none', text: 'anthropic',
+  });
+});
+
+test('auto degrades to offline rules with nothing configured', () => {
+  // Node has no SpeechRecognition, standing in for a browser without it.
+  assert.deepEqual(config.resolve(config.DEFAULTS, null), { transcribe: 'none', text: 'local' });
+});
+
+test('an explicit choice that cannot be honoured degrades instead of throwing', () => {
+  const pinned = { ...config.DEFAULTS, transcribe: 'backend', text: 'anthropic' };
+  assert.deepEqual(config.resolve(pinned, null), { transcribe: 'none', text: 'local' });
+
+  const pinnedKeyless = { ...config.DEFAULTS, transcribe: 'openai', text: 'openai' };
+  assert.deepEqual(config.resolve(pinnedKeyless, BACKEND_READY), {
+    transcribe: 'none', text: 'local',
+  });
+});
+
+test('an explicit choice wins over an available backend', () => {
+  const pinned = { ...config.DEFAULTS, transcribe: 'openai', text: 'anthropic', openaiKey: 'sk-x', anthropicKey: 'sk-a' };
+  assert.deepEqual(config.resolve(pinned, BACKEND_READY), {
+    transcribe: 'openai', text: 'anthropic',
+  });
+});
+
+test('clearKeys removes both keys and keeps the rest', () => {
+  const cleared = config.clearKeys({ ...config.DEFAULTS, openaiKey: 'a', anthropicKey: 'b', language: 'ja' });
+  assert.equal(cleared.openaiKey, '');
+  assert.equal(cleared.anthropicKey, '');
+  assert.equal(cleared.language, 'ja');
+});
+
+test('describe gives every resolved engine a human label', () => {
+  for (const transcribe of ['backend', 'openai', 'browser', 'none']) {
+    for (const text of ['backend', 'anthropic', 'openai', 'local']) {
+      const labels = config.describe({ transcribe, text });
+      assert.ok(labels.transcribe && labels.transcribe !== transcribe, transcribe);
+      assert.ok(labels.text && labels.text !== text, text);
+    }
+  }
+});

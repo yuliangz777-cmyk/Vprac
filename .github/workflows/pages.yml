@@ -57,6 +57,12 @@ jobs:
                 --exclude 'lectureflow' \
                 --exclude 'tests' --exclude 'tools' --exclude '.tmp' \
                 --exclude 'package-lock.json' ./ _site/
+      - name: Add the LectureFlow PWA
+        # Only the static half ships; the FastAPI backend is for people who
+        # run it locally and is not part of the published site.
+        run: |
+          mkdir -p _site/lectureflow
+          rsync -a lectureflow/static/ _site/lectureflow/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

@@ -163,5 +163,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             STATIC_DIR / "index.html", headers={"Cache-Control": "no-store"}
         )
 
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    @app.get("/sw.js")
+    async def service_worker() -> FileResponse:
+        # Must not be served stale, or a shipped fix never reaches an install.
+        return FileResponse(
+            STATIC_DIR / "sw.js",
+            media_type="text/javascript",
+            headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
+        )
+
+    # Mounted last, at the root, so the static tree has the same shape here as
+    # on a static host: the page can resolve every URL relative to itself and
+    # work in both places unchanged. The /api routes above are registered
+    # first and therefore still win.
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app

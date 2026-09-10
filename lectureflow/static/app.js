@@ -1,27 +1,39 @@
 import { Segmenter, encodeWav, resampleTo, TARGET_RATE } from './audio.js';
+import { createTextEngine, createTranscribeEngine } from './engines.js';
+import * as config from './settings.js';
 import {
-  cleanChunk, escapeHtml, formatClock, joinTranscript,
-  localAnswer, localSummary, notesToMarkdown,
+  cleanChunk, escapeHtml, formatClock, joinTranscript, localSummary, notesToMarkdown,
 } from './text.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {
-  dot: $('dot'), state: $('state'), timer: $('timer'), mode: $('mode'),
+  dot: $('dot'), state: $('state'), timer: $('timer'), settings: $('settings'),
   transcript: $('transcript'), chars: $('chars'), liveInfo: $('liveInfo'),
   level: $('level'), notes: $('notes'), noteStatus: $('noteStatus'),
   messages: $('messages'), question: $('question'), toast: $('toast'),
   start: $('start'), stop: $('stop'), clear: $('clear'),
-  summarize: $('summarize'), export: $('export'), ask: $('ask'),
-  backlog: $('backlog'),
+  summarize: $('summarize'), export: $('export'), ask: $('ask'), backlog: $('backlog'),
+  setup: $('setup'), setupSummary: $('setupSummary'), saveSetup: $('saveSetup'),
+  clearKeys: $('clearKeys'), setTranscribe: $('setTranscribe'), setText: $('setText'),
+  setOpenaiKey: $('setOpenaiKey'), setAnthropicKey: $('setAnthropicKey'),
+  setLanguage: $('setLanguage'),
 };
+
+// Every URL is resolved against the page, so the same build works whether the
+// Python app serves it at / or a static host serves it from a subdirectory.
+const API_BASE = new URL('./api/', document.baseURI).href;
+const WORKLET_URL = new URL('./capture-worklet.js', import.meta.url).href;
 
 const STORAGE_KEY = 'lectureflow.session.v2';
 const AUTO_SUMMARY_MS = 30000;
 const AUTO_SUMMARY_CHARS = 320;
 
 const state = {
-  transcribeReady: false,
-  textReady: false,
+  settings: config.load(),
+  backend: null,
+  resolved: { transcribe: 'none', text: 'local' },
+  transcriber: null,
+  text: null,
   listening: false,
   seconds: 0,
   timerId: null,
@@ -35,8 +47,7 @@ const state = {
 const audio = { stream: null, context: null, node: null, sink: null, segmenter: null, watchdog: null };
 const speech = { recognition: null };
 const wake = { lock: null };
-
-const uploads = { queue: [], inflight: 0, max: 2, seq: 0, nextEmit: 0, ready: new Map(), failures: 0 };
+const uploads = { queue: [], inflight: 0, max: 2, seq: 0, nextEmit: 0, ready: new Map() };
 
 /* ---------------------------------------------------------------- UI ---- */
 
@@ -44,10 +55,10 @@ function toast(message) {
   el.toast.textContent = message;
   el.toast.classList.add('show');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => el.toast.classList.remove('show'), 2600);
+  toast.timer = setTimeout(() => el.toast.classList.remove('show'), 3200);
 }
 
-function setInfo(html) { el.liveInfo.innerHTML = html; }
+const setInfo = (html) => { el.liveInfo.innerHTML = html; };
 
 function setListening(active, info) {
   state.listening = active;
@@ -77,8 +88,9 @@ function updateCount() {
 
 function updateBacklog() {
   const pending = uploads.queue.length + uploads.inflight;
-  if (!pending) { el.backlog.textContent = ''; return; }
-  el.backlog.textContent = pending > 3 ? `佇列 ${pending} 段（網路較慢）` : `處理中 ${pending} 段`;
+  el.backlog.textContent = pending
+    ? (pending > 3 ? `佇列 ${pending} 段（網路較慢）` : `處理中 ${pending} 段`)
+    : '';
 }
 
 /* --------------------------------------------------------- persistence -- */
@@ -89,10 +101,8 @@ function persist() {
   persistTimer = setTimeout(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        transcript: el.transcript.value,
-        notes: state.notes,
-        seconds: state.seconds,
-        savedAt: Date.now(),
+        transcript: el.transcript.value, notes: state.notes,
+        seconds: state.seconds, savedAt: Date.now(),
       }));
     } catch { /* private mode or quota: the session simply is not restorable */ }
   }, 400);
@@ -111,46 +121,58 @@ function restore() {
   updateCount();
 }
 
-/* ----------------------------------------------------------------- api -- */
+/* ------------------------------------------------------------- engines -- */
 
-async function api(path, options = {}) {
-  const response = await fetch(path, options);
-  let payload = {};
-  try { payload = await response.json(); } catch { /* empty body */ }
-  if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
-  return payload;
+const BACKEND_CACHE = 'lectureflow.backend.v1';
+
+/** Is there a LectureFlow server behind this page?
+ *
+ *  On a static install there is not, and the probe 404s. That answer is
+ *  remembered for the session so a reload - including an offline one - does
+ *  not repeat a request we already know will fail.
+ */
+async function probeBackend() {
+  try {
+    const cached = sessionStorage.getItem(BACKEND_CACHE);
+    if (cached) return JSON.parse(cached);
+  } catch { /* sessionStorage unavailable; just probe */ }
+
+  if (navigator.onLine === false) return null;
+
+  let status = null;
+  try {
+    const response = await fetch(`${API_BASE}status`, { headers: { Accept: 'application/json' } });
+    if (response.ok) {
+      const payload = await response.json();
+      if (payload && typeof payload === 'object' && 'transcribe_ready' in payload) status = payload;
+    }
+  } catch { /* no server behind this page: a static install, which is expected */ }
+
+  try { sessionStorage.setItem(BACKEND_CACHE, JSON.stringify(status)); } catch { /* ignore */ }
+  return status;
 }
 
-async function loadStatus() {
-  try {
-    const status = await api('/api/status');
-    state.transcribeReady = !!status.transcribe_ready;
-    state.textReady = !!status.text_ready;
-    const parts = [];
-    parts.push(status.transcribe_ready ? status.transcribe_model : '瀏覽器辨識');
-    parts.push(status.text_ready ? status.text_model : '本機規則');
-    el.mode.textContent = status.transcribe_ready ? 'API 模式' : '瀏覽器備援';
-    el.mode.title = parts.join('  ·  ');
-  } catch {
-    state.transcribeReady = false;
-    state.textReady = false;
-    el.mode.textContent = '離線模式';
-    el.mode.title = '無法連線到後端';
-  }
+function applyEngines() {
+  state.resolved = config.resolve(state.settings, state.backend);
+  const context = { settings: state.settings, apiBase: API_BASE };
+  state.transcriber = createTranscribeEngine(state.resolved.transcribe, context);
+  state.text = createTextEngine(state.resolved.text, context);
+
+  const labels = config.describe(state.resolved);
+  el.settings.textContent = `${labels.transcribe} · ${labels.text}`;
+  el.settings.title = '點擊調整語音辨識與筆記來源';
+  el.setupSummary.textContent = state.backend
+    ? `已連上本機伺服器（${state.backend.transcribe_model}）。`
+    : '沒有偵測到本機伺服器，將直接在這台裝置上運作。';
 }
 
 /* ------------------------------------------------------- upload queue --- */
 
-async function postChunk(job) {
-  const form = new FormData();
-  form.append('file', new Blob([job.buffer], { type: 'audio/wav' }), `seg-${job.seq}.wav`);
-  form.append('hint', el.transcript.value.slice(-450));
-
+async function transcribeWithRetry(job) {
   let delay = 600;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const result = await api('/api/transcribe', { method: 'POST', body: form });
-      return result.text || '';
+      return await state.transcriber.transcribe(job.buffer, el.transcript.value);
     } catch (error) {
       if (attempt === 2) throw error;
       await new Promise((resolve) => setTimeout(resolve, delay));
@@ -174,13 +196,12 @@ function pumpQueue() {
     const job = uploads.queue.shift();
     uploads.inflight++;
     updateBacklog();
-    postChunk(job)
-      .then((text) => { uploads.failures = 0; uploads.ready.set(job.seq, text); })
+    transcribeWithRetry(job)
+      .then((text) => { uploads.ready.set(job.seq, text); })
       .catch((error) => {
-        // Emit an empty result so ordering advances and the rest of the
+        // Record an empty result so ordering advances and the rest of the
         // lecture keeps flowing; only the failed seconds are lost.
         uploads.ready.set(job.seq, '');
-        uploads.failures++;
         setInfo(`轉錄失敗（${escapeHtml(error.message)}），下一段會繼續`);
       })
       .finally(() => {
@@ -228,7 +249,7 @@ function releaseWakeLock() {
 async function buildCaptureNode(context, source, onSamples) {
   if (context.audioWorklet) {
     try {
-      await context.audioWorklet.addModule('/static/capture-worklet.js');
+      await context.audioWorklet.addModule(WORKLET_URL);
       const node = new AudioWorkletNode(context, 'lectureflow-capture');
       node.port.onmessage = (event) => onSamples(event.data);
       source.connect(node);
@@ -274,7 +295,7 @@ async function startCapture() {
 
   // A backgrounded tab can suspend the context; nudge it back awake.
   audio.watchdog = setInterval(() => {
-    if (state.listening && audio.context && audio.context.state === 'suspended') {
+    if (state.listening && audio.context?.state === 'suspended') {
       audio.context.resume().catch(() => {});
     }
   }, 3000);
@@ -308,7 +329,7 @@ function buildRecognition() {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Recognition) return null;
   const recognition = new Recognition();
-  recognition.lang = 'zh-TW';
+  recognition.lang = state.settings.language === 'zh' ? 'zh-TW' : (state.settings.language || 'zh-TW');
   recognition.continuous = true;
   recognition.interimResults = true;
   recognition.onresult = (event) => {
@@ -322,7 +343,7 @@ function buildRecognition() {
     setInfo(interim ? `辨識中：${escapeHtml(interim)}` : '瀏覽器即時辨識中');
   };
   recognition.onend = () => {
-    // Chrome ends the session every minute or so; restart while listening.
+    // Safari and Chrome both end the session periodically; restart it.
     if (state.listening) { try { recognition.start(); } catch { /* already running */ } }
   };
   recognition.onerror = (event) => {
@@ -332,11 +353,9 @@ function buildRecognition() {
   return recognition;
 }
 
-async function startFallback() {
+async function startBrowserSpeech() {
   speech.recognition = speech.recognition || buildRecognition();
-  if (!speech.recognition) {
-    throw new Error('此瀏覽器不支援語音辨識，請設定 API key 或改用 Chrome / Edge。');
-  }
+  if (!speech.recognition) throw new Error('此瀏覽器不支援語音辨識，請在設定裡填入 API 金鑰。');
   await requestWakeLock();
   setListening(true, '瀏覽器即時辨識中');
   try { speech.recognition.start(); } catch { /* already running */ }
@@ -346,9 +365,15 @@ async function startFallback() {
 
 async function start() {
   if (state.listening) return;
+  if (state.resolved.transcribe === 'none') {
+    toast('請先在設定裡選擇語音辨識方式。');
+    openSetup();
+    return;
+  }
   setInfo('正在取得麥克風…');
   try {
-    if (state.transcribeReady) await startCapture(); else await startFallback();
+    if (state.resolved.transcribe === 'browser') await startBrowserSpeech();
+    else await startCapture();
     state.startedAt = state.startedAt || new Date();
   } catch (error) {
     setListening(false, '無法啟動麥克風');
@@ -377,7 +402,7 @@ function renderNotes(notes) {
     html += `<div class="note"><h3>目前講到</h3><p class="latest">${escapeHtml(notes.latest)}</p></div>`;
   }
   html += list('重點摘要', notes.summary);
-  if (notes.concepts && notes.concepts.length) {
+  if (notes.concepts?.length) {
     html += `<div class="note"><h3>重要名詞</h3>${notes.concepts
       .map((c) => `<p class="concept"><b>${escapeHtml(c.term)}</b> ${escapeHtml(c.explanation || '')}</p>`)
       .join('')}</div>`;
@@ -402,13 +427,7 @@ async function summarize(explicit = true) {
   state.summarizing = true;
   el.noteStatus.innerHTML = '<span class="spinner"></span> 正在整理';
   try {
-    const notes = state.textReady
-      ? await api('/api/summarize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: text }),
-      })
-      : localSummary(text);
+    const notes = await state.text.summarize(text);
     state.notes = notes;
     state.lastSummaryText = text;
     renderNotes(notes);
@@ -435,47 +454,6 @@ function addMessage(who, text, mine = false) {
   return node.querySelector('.bubble');
 }
 
-async function streamAnswer(body, bubble) {
-  const response = await fetch('/api/ask/stream', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let answer = '';
-  let failure = null;
-
-  while (!failure) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const blocks = buffer.split('\n\n');
-    buffer = blocks.pop();
-    for (const block of blocks) {
-      for (const line of block.split('\n')) {
-        if (!line.startsWith('data:')) continue;
-        const data = line.slice(5).trim();
-        if (!data || data === '[DONE]') continue;
-        let event;
-        try { event = JSON.parse(data); } catch { continue; }
-        if (event.error) { failure = event.error; break; }
-        if (event.delta) {
-          answer += event.delta;
-          bubble.textContent = answer;
-          el.messages.scrollTop = el.messages.scrollHeight;
-        }
-      }
-      if (failure) break;
-    }
-  }
-  if (failure) throw new Error(failure);
-  return answer;
-}
-
 async function ask() {
   const question = el.question.value.trim();
   const transcript = el.transcript.value.trim();
@@ -487,11 +465,10 @@ async function ask() {
   const bubble = addMessage('回答', '…');
 
   try {
-    if (!state.textReady) {
-      bubble.textContent = localAnswer(question, transcript);
-      return;
-    }
-    const answer = await streamAnswer({ transcript, question }, bubble);
+    const answer = await state.text.ask(transcript, question, (partial) => {
+      bubble.textContent = partial;
+      el.messages.scrollTop = el.messages.scrollHeight;
+    });
     if (!answer.trim()) bubble.textContent = '（沒有取得回答）';
   } catch (error) {
     bubble.textContent = `回答失敗：${error.message}`;
@@ -534,6 +511,34 @@ function clearSession() {
   updateCount();
 }
 
+/* -------------------------------------------------------------- setup --- */
+
+function openSetup() {
+  el.setTranscribe.value = state.settings.transcribe;
+  el.setText.value = state.settings.text;
+  el.setOpenaiKey.value = state.settings.openaiKey;
+  el.setAnthropicKey.value = state.settings.anthropicKey;
+  el.setLanguage.value = state.settings.language;
+  if (typeof el.setup.showModal === 'function') el.setup.showModal();
+  else el.setup.setAttribute('open', '');
+}
+
+function saveSetup() {
+  state.settings = {
+    ...state.settings,
+    transcribe: el.setTranscribe.value,
+    text: el.setText.value,
+    openaiKey: el.setOpenaiKey.value.trim(),
+    anthropicKey: el.setAnthropicKey.value.trim(),
+    language: el.setLanguage.value.trim(),
+  };
+  const stored = config.save(state.settings);
+  speech.recognition = null; // language may have changed
+  applyEngines();
+  const labels = config.describe(state.resolved);
+  toast(stored ? `已套用：${labels.transcribe} · ${labels.text}` : '設定已套用，但無法寫入這台裝置的儲存空間。');
+}
+
 /* ---------------------------------------------------------------- wire -- */
 
 el.start.onclick = start;
@@ -542,6 +547,16 @@ el.clear.onclick = clearSession;
 el.summarize.onclick = () => summarize(true);
 el.export.onclick = exportNotes;
 el.ask.onclick = ask;
+el.settings.onclick = openSetup;
+el.saveSetup.onclick = () => { saveSetup(); };
+el.clearKeys.onclick = () => {
+  el.setOpenaiKey.value = '';
+  el.setAnthropicKey.value = '';
+  state.settings = config.clearKeys(state.settings);
+  config.save(state.settings);
+  applyEngines();
+  toast('已清除這台裝置上的金鑰。');
+};
 
 el.transcript.addEventListener('input', updateCount);
 el.question.addEventListener('keydown', (event) => {
@@ -564,6 +579,24 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', () => { persist(); stop(); });
 
-setListening(false, '等待開始');
-restore();
-loadStatus();
+async function init() {
+  setListening(false, '等待開始');
+  restore();
+  applyEngines();
+  state.backend = await probeBackend();
+  applyEngines();
+
+  if (state.resolved.transcribe === 'none') {
+    setInfo('尚未設定語音辨識，點右上角設定');
+  }
+
+  if ('serviceWorker' in navigator) {
+    try {
+      await navigator.serviceWorker.register(new URL('./sw.js', import.meta.url), {
+        scope: new URL('./', import.meta.url).pathname,
+      });
+    } catch { /* offline start-up is a bonus, not a requirement */ }
+  }
+}
+
+init();
