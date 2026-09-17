@@ -1,3 +1,11 @@
+Metadata-Version: 2.4
+Name: ntucool
+Version: 1.0.0
+Summary: 自動擷取 NTU COOL 課程資訊與檔案
+License: MIT
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+
 # ntucool — NTU COOL 課程檔案與資訊自動擷取
 
 把你在 **NTU COOL** 修的每一門課，自動整理成一個本機資料夾：投影片、講義、附件全部抓下來，
@@ -21,7 +29,7 @@
 把它交給工具（擇一）：
 
 ```bash
-read -rs NTU_COOL_TOKEN && export NTU_COOL_TOKEN   # 最推薦：不進 shell 歷史紀錄
+export NTU_COOL_TOKEN='貼上你的權杖'        # 最推薦：不落地
 echo "NTU_COOL_TOKEN=貼上你的權杖" > .env   # 或寫進 .env（已被 .gitignore 忽略）
 python3 -m ntucool init                     # 或產生 ntucool.config.json 再填進去
 ```
@@ -32,7 +40,7 @@ python3 -m ntucool init                     # 或產生 ntucool.config.json 再�
 
 ## 二、開始用
 
-不需要安裝，只要 Python 3.10 以上（3.10 / 3.11 / 3.12 / 3.13 都實測過）：
+不需要安裝，只要 Python 3.9+：
 
 ```bash
 cd ntu-cool
