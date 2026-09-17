@@ -6,6 +6,12 @@ PAGE = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#0b62d6">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="NTU COOL">
+<link rel="manifest" href="/manifest.webmanifest?k=__KEY__">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%9A%3C/text%3E%3C/svg%3E">
 <title>NTU COOL 同步</title>
 <style>
@@ -62,6 +68,8 @@ ul.rows .sub{color:var(--muted);font-size:.8rem;display:block;margin-top:2px}
 .badge.late{background:rgba(179,38,30,.15);color:var(--err)}
 .badge.done{background:rgba(10,125,70,.15);color:var(--ok)}
 .score{font-variant-numeric:tabular-nums;font-weight:600}
+#offline{background:rgba(154,91,0,.15);color:var(--warn);border-radius:10px;padding:10px 14px;
+  margin-bottom:14px;font-size:.9rem;font-weight:600}
 .steps{margin:10px 0 14px;padding-left:1.2em;color:var(--muted);font-size:.9rem}
 .steps li{margin:5px 0}
 .steps b{color:var(--text)}
@@ -75,6 +83,7 @@ a.plain{color:var(--accent)}
 </head>
 <body><div class="wrap">
 <h1>NTU COOL 同步</h1>
+<div id="offline" class="hide">離線中——顯示上次同步的資料</div>
 
 <div class="card hide" id="loginCard">
   <b>先登入</b>
@@ -125,7 +134,7 @@ a.plain{color:var(--accent)}
 </div>
 </div>
 <script>
-const KEY = new URLSearchParams(location.search).get('k') || '';
+const KEY = new URLSearchParams(location.search).get('k') || '__KEY__';
 const api = (path, opts) => fetch(path + (path.includes('?') ? '&' : '?') + 'k=' + encodeURIComponent(KEY), opts);
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -256,6 +265,17 @@ async function startSync(){
 }
 $('go').onclick = startSync;
 $('refresh').onclick = () => { loadCourses(); loadDashboard(); };
+
+function markOffline(){ $('offline').classList.toggle('hide', navigator.onLine); }
+addEventListener('online', markOffline);
+addEventListener('offline', markOffline);
+markOffline();
+
+// Service Worker 需要安全來源（127.0.0.1 算，區網 IP 不算）；不支援就安靜略過
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+
 loadStatus(); loadCourses(); loadDashboard();
 </script>
 </body></html>

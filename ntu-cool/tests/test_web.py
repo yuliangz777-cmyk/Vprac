@@ -273,10 +273,57 @@ class TestAccessKey(WebTestCase):
 
     def test_browser_auto_requests_do_not_error(self):
         """瀏覽器自動索取 favicon 時不該噴 403，否則 console 一片紅。"""
-        for path in ("/favicon.ico", "/apple-touch-icon.png"):
-            status, body, _ = self.get(path, key=False)
-            self.assertEqual(status, 204, path)
-            self.assertEqual(body, b"")
+        status, body, _ = self.get("/favicon.ico", key=False)
+        self.assertEqual(status, 204)
+        self.assertEqual(body, b"")
+
+
+class TestPwaAssets(WebTestCase):
+    """要能「加到主畫面」：manifest、icon、Service Worker 都得拿得到。"""
+
+    def test_icons_are_real_pngs_and_need_no_key(self):
+        for path, expected in (("/icon-192.png", 192), ("/icon-512.png", 512),
+                               ("/apple-touch-icon.png", 180), ("/icon-512-maskable.png", 512)):
+            status, body, headers = self.get(path, key=False)
+            self.assertEqual(status, 200, path)
+            self.assertEqual(headers["Content-Type"], "image/png", path)
+            self.assertTrue(body.startswith(b"\x89PNG\r\n\x1a\n"), path)
+            width = int.from_bytes(body[16:20], "big")   # IHDR 的寬度
+            self.assertEqual(width, expected, path)
+
+    def test_service_worker_is_served_from_the_root_with_a_js_type(self):
+        status, body, headers = self.get("/sw.js", key=False)
+        self.assertEqual(status, 200)
+        self.assertIn("javascript", headers["Content-Type"])
+        self.assertEqual(headers.get("Service-Worker-Allowed"), "/")
+        self.assertIn("addEventListener('fetch'", body.decode("utf-8"))
+
+    def test_manifest_needs_the_key_because_start_url_carries_it(self):
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.get("/manifest.webmanifest", key=False)
+        self.assertEqual(caught.exception.code, 403)
+
+        status, body, headers = self.get("/manifest.webmanifest")
+        self.assertEqual(status, 200)
+        self.assertIn("manifest+json", headers["Content-Type"])
+        data = json.loads(body)
+        self.assertEqual(data["start_url"], f"/?k={self.key}")
+        self.assertEqual(data["display"], "standalone")
+        self.assertIn("maskable", [icon["purpose"] for icon in data["icons"]])
+
+    def test_page_carries_the_key_into_the_manifest_link(self):
+        _, body, _ = self.get("/")
+        page = body.decode("utf-8")
+        self.assertIn(f'href="/manifest.webmanifest?k={self.key}"', page)
+        self.assertIn('rel="apple-touch-icon"', page)
+        self.assertIn("navigator.serviceWorker.register('/sw.js')", page)
+        self.assertNotIn("__KEY__", page)
+
+    def test_downloads_and_progress_are_never_cached_by_the_worker(self):
+        _, body, _ = self.get("/sw.js", key=False)
+        worker = body.decode("utf-8")
+        for path in ("/files/", "/api/progress", "/api/sync"):
+            self.assertIn(f"'{path}'", worker)
 
 
 class TestDashboard(WebTestCase):

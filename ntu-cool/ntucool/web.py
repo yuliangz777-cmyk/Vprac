@@ -21,10 +21,12 @@ from pathlib import Path
 from .client import CanvasClient, bearer_header
 from .config import Config, clear_saved_token, save_token_to_env
 from .errors import AuthError, NtuCoolError
+from .icon import icon_png, prewarm
 from .manifest import Manifest
 from .models import local_time, parse_iso
 from .report import human_size
 from .scraper import Scraper
+from .pwa import SERVICE_WORKER, manifest
 from .webui import PAGE
 
 #: 只接受這些 Host，擋掉 DNS rebinding（別的網站把某個網域指到 127.0.0.1）
@@ -34,7 +36,16 @@ ALLOWED_HOSTS = ("127.0.0.1", "localhost", "[::1]", "::1")
 KEY_FILENAME = ".ntucool-webkey"
 
 #: 瀏覽器會自動索取這些，沒有就讓它安靜地拿到 204，不要變成 403 錯誤
-QUIET_PATHS = ("/favicon.ico", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png")
+QUIET_PATHS = ("/favicon.ico",)
+
+#: PWA 的資產不含任何個人資料，也必須在還沒帶金鑰時就拿得到（Service Worker 會自己去抓）
+ICON_PATHS = {
+    "/icon-192.png": (192, False),
+    "/icon-512.png": (512, False),
+    "/icon-512-maskable.png": (512, True),
+    "/apple-touch-icon.png": (180, True),
+    "/apple-touch-icon-precomposed.png": (180, True),
+}
 
 
 def load_or_create_key(out_dir, *, rotate: bool = False) -> str:
@@ -329,11 +340,24 @@ class Handler(BaseHTTPRequestHandler):
 
         if path in QUIET_PATHS:
             return self._send(204, b"", "text/plain")
+        if path in ICON_PATHS:
+            size, square = ICON_PATHS[path]
+            return self._send(200, icon_png(size, square=square), "image/png",
+                              {"Cache-Control": "public, max-age=86400"})
+        if path == "/sw.js":
+            # Service Worker 必須從根路徑提供，scope 才涵蓋整個站
+            return self._send(200, SERVICE_WORKER.encode("utf-8"),
+                              "text/javascript; charset=utf-8", {"Service-Worker-Allowed": "/"})
         if not self._authorized(query):
             return self._text(403, "請用終端機印出的完整網址開啟（含 ?k=... 的存取金鑰）。")
 
+        if path == "/manifest.webmanifest":
+            # start_url 裡有金鑰，所以這份要帶金鑰才拿得到
+            return self._send(200, manifest(self.app.key).encode("utf-8"),
+                              "application/manifest+json; charset=utf-8")
         if path == "/":
-            return self._send(200, PAGE.encode("utf-8"), "text/html; charset=utf-8")
+            page = PAGE.replace("__KEY__", urllib.parse.quote(self.app.key))
+            return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
         if path == "/api/status":
             return self._json(self.app.status())
         if path == "/api/dashboard":
@@ -400,6 +424,8 @@ def create_server(config: Config, host: str = "127.0.0.1", port: int = 8765,
     key = key or load_or_create_key(config.out_dir, rotate=rotate_key)
     httpd = ThreadingHTTPServer((host, port), Handler)
     httpd.app = WebApp(config, key)
+    # 512px 的 icon 要畫幾秒鐘，先在背景畫好，別讓第一個請求等
+    threading.Thread(target=prewarm, daemon=True).start()
     shown_host = lan_ip() if host in ("0.0.0.0", "::", "") else host
     url = f"http://{shown_host}:{httpd.server_address[1]}/?k={key}"
     return httpd, url
