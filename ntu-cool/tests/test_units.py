@@ -109,6 +109,13 @@ class TestConfig(unittest.TestCase):
         with self.assertRaises(ConfigError):
             cfg.validate()
 
+    def test_validate_rejects_a_token_that_cannot_go_in_a_header(self):
+        cfg = load_config(
+            environ={"NTU_COOL_TOKEN": "權杖"}, config_candidates=(), env_candidates=(),
+        )
+        with self.assertRaises(ConfigError):
+            cfg.validate()
+
     def test_validate_rejects_unknown_section(self):
         cfg = load_config(
             environ={"NTU_COOL_TOKEN": "t"}, overrides={"sections": ("files", "nope")},

@@ -66,6 +66,12 @@ class Config:
                 "找不到存取權杖。請設定環境變數 NTU_COOL_TOKEN、寫進 .env，"
                 "或執行 `ntucool init` 產生設定檔。取得方式見 README。"
             )
+        try:
+            self.token.encode("latin-1")
+        except UnicodeEncodeError:
+            raise ConfigError(
+                "權杖含有不合法的字元（可能複製到多餘的中文或全形符號），請重新複製一次"
+            ) from None
         if not self.base_url.startswith(("http://", "https://")):
             raise ConfigError(f"base_url 必須以 http(s):// 開頭，目前是：{self.base_url!r}")
         if self.enrollment_state not in ("active", "completed", "invited", "all"):
@@ -201,6 +207,39 @@ def load_config(
             value = Path(value)
         cfg = replace(cfg, **{key: value})
     return cfg
+
+
+#: 網頁介面「登入」之後把權杖寫在這裡；load_config 的 ENV_CANDIDATES 會自動找到它
+USER_ENV_PATH = Path.home() / ".config" / "ntucool" / ".env"
+
+
+def save_token_to_env(token: str, path: Path | None = None) -> Path:
+    """把權杖寫進使用者層級的 .env，之後每次執行都會自動讀到。"""
+    path = path or USER_ENV_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing = {}
+    if path.is_file():
+        existing = parse_env_file(path.read_text(encoding="utf-8"))
+    existing["NTU_COOL_TOKEN"] = token.strip()
+    body = "".join(f"{key}={value}\n" for key, value in existing.items())
+    path.write_text(body, encoding="utf-8")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    return path
+
+
+def clear_saved_token(path: Path | None = None) -> bool:
+    """登出：把存起來的權杖移除（其他設定保留）。"""
+    path = path or USER_ENV_PATH
+    if not path.is_file():
+        return False
+    existing = parse_env_file(path.read_text(encoding="utf-8"))
+    if existing.pop("NTU_COOL_TOKEN", None) is None:
+        return False
+    path.write_text("".join(f"{k}={v}\n" for k, v in existing.items()), encoding="utf-8")
+    return True
 
 
 def config_template(token: str = "") -> str:

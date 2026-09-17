@@ -22,6 +22,24 @@ _LINK_RE = re.compile(r'<(?P<url>[^>]+)>\s*;\s*rel="(?P<rel>[^"]+)"')
 RETRY_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 
+def bearer_header(token: str | None) -> str:
+    """組出 Authorization 標頭。
+
+    HTTP 標頭只吃 latin-1，所以權杖裡混到中文或全形字元時要在這裡講清楚，
+    而不是讓 http.client 在底層丟 UnicodeEncodeError。
+    """
+    token = (token or "").strip()
+    if not token:
+        raise AuthError("沒有提供存取權杖")
+    try:
+        token.encode("latin-1")
+    except UnicodeEncodeError:
+        raise AuthError(
+            "權杖含有不合法的字元（可能複製到多餘的中文或全形符號），請重新複製一次"
+        ) from None
+    return f"Bearer {token}"
+
+
 def parse_link_header(value: str | None) -> dict[str, str]:
     """把 Canvas 的 `Link` 標頭解析成 {rel: url}。"""
     if not value:
@@ -107,13 +125,17 @@ class CanvasClient:
             raise RateLimitError("請求過於頻繁（429）", status=status, url=url, body=text)
         raise ApiError(f"API 回應 {status}", status=status, url=url, body=text)
 
+    def _auth_header(self) -> str:
+        return bearer_header(self.token)
+
     def request(self, path: str, *, params: dict | None = None, method: str = "GET", raw: bool = False) -> Response:
         """送出一次請求，失敗時依退避策略重試。"""
         url = self._url(path, params)
+        authorization = self._auth_header()
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             req = urllib.request.Request(url, method=method)
-            req.add_header("Authorization", f"Bearer {self.token}")
+            req.add_header("Authorization", authorization)
             req.add_header("User-Agent", USER_AGENT)
             if not raw:
                 req.add_header("Accept", "application/json")
@@ -209,7 +231,7 @@ class CanvasClient:
                 req = urllib.request.Request(url)
                 # 檔案網址已含簽章；但同網域的請求帶上權杖也無妨。
                 if url.startswith(self.api_root.rsplit("/api/", 1)[0]):
-                    req.add_header("Authorization", f"Bearer {self.token}")
+                    req.add_header("Authorization", self._auth_header())
                 req.add_header("User-Agent", USER_AGENT)
                 self.request_count += 1
                 written = 0

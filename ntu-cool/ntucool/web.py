@@ -17,9 +17,9 @@ from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from .client import CanvasClient
-from .config import Config
-from .errors import NtuCoolError
+from .client import CanvasClient, bearer_header
+from .config import Config, clear_saved_token, save_token_to_env
+from .errors import AuthError, NtuCoolError
 from .manifest import Manifest
 from .models import local_time
 from .report import human_size
@@ -88,12 +88,17 @@ class WebApp:
     # ---- 資料 ----------------------------------------------------------
     def status(self) -> dict:
         manifest = Manifest.load(self.config.out_dir)
-        user = ""
-        try:
-            user = (self._client().whoami() or {}).get("name") or ""
-        except NtuCoolError:
-            user = ""  # 離線或權杖失效時照樣把畫面顯示出來
+        user, token_ok = "", False
+        if self.config.token:
+            try:
+                user = (self._client().whoami() or {}).get("name") or ""
+                token_ok = bool(user)
+            except AuthError:
+                token_ok = False  # 權杖過期 → 回到登入畫面
+            except NtuCoolError:
+                token_ok = True  # 只是連不上，不必要求重新登入
         return {
+            "authenticated": token_ok,
             "user": user,
             "base_url": self.config.base_url,
             "out_dir": str(Path(self.config.out_dir).resolve()),
@@ -152,7 +157,33 @@ class WebApp:
             )
         return config
 
+    def login(self, token: str) -> tuple[bool, str]:
+        """驗證權杖後存起來。權杖只往這裡走，不會出現在日誌或回應裡。"""
+        token = (token or "").strip()
+        if not token:
+            return False, "請貼上存取權杖"
+        try:
+            bearer_header(token)  # 格式問題要講得比「權杖無效」更具體
+        except AuthError as exc:
+            return False, str(exc)
+        try:
+            probe = CanvasClient(self.config.api_root, token, timeout=self.config.timeout, max_retries=1)
+            profile = probe.whoami() or {}
+        except AuthError:
+            return False, "這個權杖無效或已過期，請回 NTU COOL 重新產生一個"
+        except NtuCoolError as exc:
+            return False, f"無法連上 {self.config.base_url}：{exc}"
+        save_token_to_env(token)
+        self.config = replace(self.config, token=token)
+        return True, profile.get("name") or ""
+
+    def logout(self) -> None:
+        clear_saved_token()
+        self.config = replace(self.config, token="")
+
     def start_sync(self, options: dict) -> bool:
+        if not self.config.token:
+            return False
         if self.job.running:
             return False
         self.job = SyncJob()
@@ -225,6 +256,18 @@ class Handler(BaseHTTPRequestHandler):
         return secrets.compare_digest(supplied, self.app.key)
 
     # ---- 路由 ----------------------------------------------------------
+    def handle_one_request(self):
+        """任何未預期的例外都轉成 500，不要讓連線直接斷掉。"""
+        try:
+            super().handle_one_request()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as exc:  # noqa: BLE001
+            try:
+                self._text(500, f"伺服器發生錯誤：{exc}")
+            except Exception:  # noqa: BLE001 — 連回應都送不出去就放棄
+                pass
+
     def do_GET(self):  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
         query = urllib.parse.parse_qs(parsed.query)
@@ -260,14 +303,25 @@ class Handler(BaseHTTPRequestHandler):
         query = urllib.parse.parse_qs(parsed.query)
         if not self._authorized(query):
             return self._text(403, "存取金鑰不正確")
-        if parsed.path != "/api/sync":
+        if parsed.path not in ("/api/sync", "/api/login", "/api/logout"):
             return self._text(404, "沒有這個端點")
         length = int(self.headers.get("Content-Length") or 0)
         try:
-            options = json.loads(self.rfile.read(length) or b"{}")
+            payload = json.loads(self.rfile.read(length) or b"{}")
         except json.JSONDecodeError:
-            options = {}
-        if not self.app.start_sync(options if isinstance(options, dict) else {}):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+
+        if parsed.path == "/api/login":
+            ok, message = self.app.login(str(payload.get("token") or ""))
+            return self._json({"ok": ok, "user" if ok else "error": message}, 200 if ok else 401)
+        if parsed.path == "/api/logout":
+            self.app.logout()
+            return self._json({"ok": True})
+        if not self.app.config.token:
+            return self._text(401, "尚未登入")
+        if not self.app.start_sync(payload):
             return self._text(409, "已經有一個同步在進行中")
         return self._json({"started": True})
 

@@ -59,6 +59,13 @@ class TestClient(unittest.TestCase):
         with self.assertRaises(ForbiddenError):
             self.client.get("courses/202/files")
 
+    def test_non_ascii_token_raises_auth_error_before_sending(self):
+        client = CanvasClient(self.server.api_root, "權杖", sleep=self.slept.append)
+        with self.assertRaises(AuthError) as caught:
+            client.whoami()
+        self.assertIn("不合法的字元", str(caught.exception))
+        self.assertEqual(client.request_count, 0)  # 根本不該送出去
+
     def test_paginate_safe_swallows_forbidden(self):
         self.assertEqual(self.client.paginate_safe("courses/202/files", label="檔案"), [])
 

@@ -50,12 +50,37 @@ ul.files li:last-child{border-bottom:0}
 ul.files a{color:var(--accent);text-decoration:none;word-break:break-all}
 .size{color:var(--muted);font-size:.8rem;margin-left:6px}
 .empty{color:var(--muted);font-size:.9rem}
+.steps{margin:10px 0 14px;padding-left:1.2em;color:var(--muted);font-size:.9rem}
+.steps li{margin:5px 0}
+.steps b{color:var(--text)}
+input[type=password]{font:inherit;width:100%;padding:12px;border:1px solid var(--line);
+  border-radius:10px;background:var(--bg);color:var(--text)}
+.err{color:var(--err);font-size:.9rem;margin-top:10px;min-height:1.2em}
+.linkbtn{background:none;border:0;color:var(--muted);font-size:.82rem;padding:0;width:auto;
+  text-decoration:underline;cursor:pointer}
+a.plain{color:var(--accent)}
 </style>
 </head>
 <body><div class="wrap">
 <h1>NTU COOL 同步</h1>
 
-<div class="card">
+<div class="card hide" id="loginCard">
+  <b>先登入</b>
+  <ol class="steps">
+    <li>在 NTU COOL 開啟 <a class="plain" id="tokenLink" href="#" target="_blank" rel="noopener">帳戶 → 設定</a></li>
+    <li>捲到「核准的整合」→ 按 <b>+ 新增存取權杖</b>，用途填 <b>ntucool</b></li>
+    <li>把產生的權杖貼到下面（<b>它只會顯示一次</b>）</li>
+  </ol>
+  <input type="password" id="token" placeholder="貼上存取權杖" autocomplete="off" spellcheck="false">
+  <div class="err" id="loginErr"></div>
+  <button id="login">登入並開始下載</button>
+  <p class="empty" style="margin-bottom:0">
+    這裡用的是 NTU COOL 的存取權杖，不是你的學校帳號密碼。
+    權杖只存在這台電腦上（<code>~/.config/ntucool/.env</code>，權限 600），不會傳給任何人。
+  </p>
+</div>
+
+<div class="card hide" id="mainCard">
   <div class="meta" id="meta"><span>載入中…</span></div>
   <label class="opt"><input type="checkbox" id="pdfOnly"> 只下載 PDF／簡報</label>
   <label class="opt"><input type="checkbox" id="skipBig"> 略過 50MB 以上的大檔</label>
@@ -65,6 +90,7 @@ ul.files a{color:var(--accent);text-decoration:none;word-break:break-all}
   </label>
   <button id="go">開始同步</button>
   <button class="ghost" id="refresh">重新整理檔案清單</button>
+  <p style="margin:12px 0 0"><button class="linkbtn" id="logout">登出（清除這台電腦上的權杖）</button></p>
 </div>
 
 <div class="card hide" id="logCard">
@@ -72,7 +98,7 @@ ul.files a{color:var(--accent);text-decoration:none;word-break:break-all}
   <div id="log"></div>
 </div>
 
-<div class="card">
+<div class="card hide" id="filesCard">
   <b>已抓下來的課程</b>
   <div id="courses"><p class="empty">還沒有資料，按上面的「開始同步」。</p></div>
 </div>
@@ -83,17 +109,52 @@ const api = (path, opts) => fetch(path + (path.includes('?') ? '&' : '?') + 'k='
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+function show(authed){
+  $('loginCard').classList.toggle('hide', authed);
+  $('mainCard').classList.toggle('hide', !authed);
+  $('filesCard').classList.toggle('hide', !authed);
+}
+
 async function loadStatus(){
   try{
     const s = await (await api('/api/status')).json();
+    show(s.authenticated);
+    $('tokenLink').href = s.base_url.replace(/\/$/, '') + '/profile/settings';
+    if(!s.authenticated) return s;
     $('meta').innerHTML = [
       s.user ? `帳號 <b>${esc(s.user)}</b>` : '',
       `站台 <b>${esc(s.base_url)}</b>`,
       `輸出 <b>${esc(s.out_dir)}</b>`,
       s.last_sync ? `上次同步 <b>${esc(s.last_sync)}</b>` : '尚未同步過',
     ].filter(Boolean).map(h => `<span>${h}</span>`).join('');
+    return s;
   }catch(e){ $('meta').textContent = '無法連上本機伺服器：' + e; }
 }
+
+$('login').onclick = async () => {
+  const token = $('token').value.trim();
+  $('loginErr').textContent = '';
+  if(!token){ $('loginErr').textContent = '請先貼上權杖'; return; }
+  $('login').disabled = true;
+  try{
+    const res = await api('/api/login', {method:'POST', headers:{'Content-Type':'application/json'},
+                                         body: JSON.stringify({token})});
+    const data = await res.json();
+    if(!res.ok){ $('loginErr').textContent = data.error || '登入失敗'; return; }
+    $('token').value = '';
+    await loadStatus();
+    startSync();                      // 登入完直接開始抓全部課程
+  }catch(e){ $('loginErr').textContent = String(e); }
+  finally{ $('login').disabled = false; }
+};
+$('token').addEventListener('keydown', e => { if(e.key === 'Enter') $('login').click(); });
+
+$('logout').onclick = async () => {
+  await api('/api/logout', {method:'POST'});
+  clearTimeout(polling);
+  $('logCard').classList.add('hide');
+  loadStatus();
+};
 
 async function loadCourses(){
   const box = $('courses');
@@ -128,7 +189,7 @@ async function poll(from){
   }
 }
 
-$('go').onclick = async () => {
+async function startSync(){
   $('go').disabled = true;
   $('logCard').classList.remove('hide');
   $('log').textContent = '';
@@ -140,7 +201,8 @@ $('go').onclick = async () => {
   const res = await api('/api/sync', {method:'POST', headers:{'Content-Type':'application/json'}, body});
   if(!res.ok){ $('status').className='status error'; $('status').textContent = '無法開始：' + await res.text(); $('go').disabled = false; return; }
   clearTimeout(polling); poll(0);
-};
+}
+$('go').onclick = startSync;
 $('refresh').onclick = loadCourses;
 loadStatus(); loadCourses();
 </script>

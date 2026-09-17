@@ -82,6 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_web = sub.add_parser("web", help="開啟本機網頁介面（用瀏覽器操作同步）", parents=[common])
     p_web.add_argument("-o", "--out", dest="out_dir", type=Path, help="輸出資料夾")
     p_web.add_argument("--port", type=int, default=8765, help="連接埠，預設 8765")
+    p_web.add_argument("--open", action="store_true", dest="open_browser", help="啟動後自動打開瀏覽器")
     p_web.add_argument("--new-key", action="store_true", dest="new_key",
                        help="重新產生存取金鑰（舊網址即失效）")
     p_web.add_argument("--host", default="127.0.0.1",
@@ -124,7 +125,8 @@ def make_config(args) -> Config:
         overrides["extra"] = {"json": True}
     if getattr(args, "skip_files", False):
         overrides["sections"] = tuple(s for s in (overrides.get("sections") or ALL_SECTIONS) if s != "files")
-    return load_config(config_path=getattr(args, "config", None), overrides=overrides).validate()
+    config = load_config(config_path=getattr(args, "config", None), overrides=overrides)
+    return config if getattr(args, "command", "") == "web" else config.validate()
 
 
 def make_logger(config: Config):
@@ -182,11 +184,17 @@ def cmd_web(args) -> int:
 
     config = make_config(args)
     httpd, url = create_server(config, host=args.host, port=args.port, rotate_key=args.new_key)
+    if not config.token:
+        print("（還沒設定權杖，開啟網頁後會先請你登入）")
     print("本機網頁介面已啟動，請在瀏覽器打開：")
     print(f"\n  {url}\n")
     if args.host not in ("127.0.0.1", "localhost"):
         print("注意：你綁定了對外位址，同網段的裝置都能連到這個網址（含金鑰才進得來）。")
     print("這個網址每次啟動都一樣，可以加到書籤。")
+    if args.open_browser:
+        import webbrowser
+
+        webbrowser.open(url)
     print("按 Ctrl+C 結束。")
     try:
         httpd.serve_forever()

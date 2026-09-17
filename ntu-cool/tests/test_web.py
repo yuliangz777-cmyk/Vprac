@@ -9,6 +9,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from dataclasses import replace
+from unittest import mock
+
 import _support  # noqa: F401
 
 from fake_canvas import TOKEN, FakeCanvas
@@ -65,6 +68,88 @@ class WebTestCase(unittest.TestCase):
                 return state
             time.sleep(0.05)
         self.fail("同步逾時")
+
+
+class TestLogin(WebTestCase):
+    """網頁上的登入流程：用存取權杖，不碰學校帳號密碼。"""
+
+    def setUp(self):
+        super().setUp()
+        # 讓「登入」寫到暫存目錄，不要碰到真的 ~/.config
+        self.env_file = Path(self.tmp.name) / "user.env"
+        patcher = mock.patch("ntucool.web.save_token_to_env", lambda token: _write_env(self.env_file, token))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        cleaner = mock.patch("ntucool.web.clear_saved_token", lambda: self.env_file.unlink(missing_ok=True))
+        cleaner.start()
+        self.addCleanup(cleaner.stop)
+        self.httpd.app.config = replace(self.httpd.app.config, token="")  # 從未登入狀態開始
+
+    def test_status_reports_not_authenticated(self):
+        _, body, _ = self.get("/api/status")
+        data = json.loads(body)
+        self.assertFalse(data["authenticated"])
+        self.assertEqual(data["user"], "")
+
+    def test_sync_is_refused_before_login(self):
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.post("/api/sync", {})
+        self.assertEqual(caught.exception.code, 401)
+
+    def test_bad_token_is_rejected_and_not_saved(self):
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.post("/api/login", {"token": "wrong"})
+        self.assertEqual(caught.exception.code, 401)
+        self.assertIn("無效或已過期", json.loads(caught.exception.read())["error"])
+        self.assertFalse(self.env_file.exists())
+
+    def test_token_with_non_ascii_characters_is_rejected_cleanly(self):
+        """貼到中文或全形字元時要回錯誤訊息，而不是把連線弄斷。"""
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.post("/api/login", {"token": "這是錯的權杖"})
+        self.assertEqual(caught.exception.code, 401)
+        self.assertIn("不合法的字元", json.loads(caught.exception.read())["error"])
+        self.assertFalse(self.env_file.exists())
+
+    def test_empty_token_is_rejected(self):
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.post("/api/login", {"token": "   "})
+        self.assertEqual(caught.exception.code, 401)
+
+    def test_login_verifies_saves_and_enables_sync(self):
+        status, data = self.post("/api/login", {"token": TOKEN})
+        self.assertEqual(status, 200)
+        self.assertEqual(data["user"], "測試同學")
+        self.assertIn(f"NTU_COOL_TOKEN={TOKEN}", self.env_file.read_text(encoding="utf-8"))
+
+        _, body, _ = self.get("/api/status")
+        self.assertTrue(json.loads(body)["authenticated"])
+        self.assertEqual(self.sync_and_wait()["status"], "done")
+        self.assertTrue(any(self.out.rglob("week1-投影片.pdf")))
+
+    def test_token_never_comes_back_in_responses(self):
+        self.post("/api/login", {"token": TOKEN})
+        for path in ("/api/status", "/api/files", "/api/progress?from=0"):
+            _, body, _ = self.get(path)
+            self.assertNotIn(TOKEN, body.decode("utf-8"), path)
+
+    def test_logout_clears_the_saved_token(self):
+        self.post("/api/login", {"token": TOKEN})
+        status, _ = self.post("/api/logout", {})
+        self.assertEqual(status, 200)
+        self.assertFalse(self.env_file.exists())
+        _, body, _ = self.get("/api/status")
+        self.assertFalse(json.loads(body)["authenticated"])
+
+    def test_expired_token_sends_you_back_to_the_login_screen(self):
+        self.httpd.app.config = replace(self.httpd.app.config, token="no-longer-valid")
+        _, body, _ = self.get("/api/status")
+        self.assertFalse(json.loads(body)["authenticated"])
+
+
+def _write_env(path: Path, token: str) -> Path:
+    path.write_text(f"NTU_COOL_TOKEN={token}\n", encoding="utf-8")
+    return path
 
 
 class TestAccessControl(WebTestCase):
@@ -155,6 +240,12 @@ class TestEndpoints(WebTestCase):
             with self.assertRaises(urllib.error.HTTPError) as caught:
                 self.get(attempt)
             self.assertEqual(caught.exception.code, 404, attempt)
+
+    def test_unexpected_errors_become_500_not_a_dropped_connection(self):
+        with mock.patch.object(type(self.httpd.app), "files", side_effect=RuntimeError("boom")):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self.get("/api/files")
+        self.assertEqual(caught.exception.code, 500)
 
     def test_unknown_path(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
