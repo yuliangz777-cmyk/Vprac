@@ -87,7 +87,7 @@ class Scraper:
     # ---- 課程清單 --------------------------------------------------------
     def list_courses(self) -> list[dict]:
         params = {
-            "include": ["term", "teachers", "total_students", "concluded"],
+            "include": ["term", "teachers", "total_students", "concluded", "total_scores"],
             "state": ["available", "completed"] if self.config.enrollment_state == "all" else None,
         }
         if self.config.enrollment_state != "all":

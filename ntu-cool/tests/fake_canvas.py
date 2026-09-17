@@ -7,14 +7,24 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timedelta, timezone
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TOKEN = "test-token"
+SESSION_COOKIE = "canvas_session=logged-in"
+CSRF_TOKEN = "csrf-abc-123"
+BROWSER_TOKEN = "token-made-in-browser"
+LOGIN_USER, LOGIN_PASSWORD = "b12345678", "hunter2"
 
 PDF_BYTES = b"%PDF-1.4 fake lecture slides\n" * 4
 ZIP_BYTES = b"PK\x03\x04 fake homework bundle\n" * 3
+
+def _iso(days: float) -> str:
+    """相對於現在的時間；截止日固定寫死的話，測到後來就全部變成過期作業。"""
+    return (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
 
 COURSES = [
     {
@@ -24,7 +34,8 @@ COURSES = [
         "html_url": "http://example/courses/101",
         "term": {"id": 9, "name": "113-2"},
         "teachers": [{"display_name": "王教授"}],
-        "enrollments": [{"enrollment_state": "active"}],
+        "enrollments": [{"enrollment_state": "active", "type": "student",
+                         "computed_current_score": 92.5, "computed_current_grade": "A"}],
     },
     {
         "id": 202,
@@ -33,7 +44,8 @@ COURSES = [
         "html_url": "http://example/courses/202",
         "term": {"id": 9, "name": "113-2"},
         "teachers": [{"display_name": "李教授"}],
-        "enrollments": [{"enrollment_state": "active"}],
+        "enrollments": [{"enrollment_state": "active", "type": "student",
+                         "computed_current_score": None, "computed_current_grade": None}],
     },
     {
         "id": 303,
@@ -129,13 +141,23 @@ ASSIGNMENTS = {
         {
             "id": 701,
             "name": "HW1 複雜度證明",
-            "due_at": "2026-03-10T15:59:00Z",
+            "due_at": _iso(3),
             "points_possible": 10,
             "submission_types": ["online_upload"],
             "html_url": "http://example/courses/101/assignments/701",
             "description": '<p>請參考 <a href="/courses/101/files/5100">補充教材</a></p>',
-            "submission": {"submitted_at": "2026-03-09T10:00:00Z", "score": 9.5, "workflow_state": "graded"},
-        }
+            "submission": {"submitted_at": _iso(-1), "score": 9.5, "workflow_state": "graded"},
+        },
+        {
+            "id": 702,
+            "name": "HW0 環境設定",
+            "due_at": _iso(-2),
+            "points_possible": 5,
+            "submission_types": ["online_upload"],
+            "html_url": "http://example/courses/101/assignments/702",
+            "description": "<p>安裝編譯環境</p>",
+            "submission": {},  # 逾期又沒交
+        },
     ],
     202: [],
 }
@@ -168,7 +190,7 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
     # ---- 工具 ----
-    def _send(self, status: int, payload=None, *, raw: bytes | None = None, headers: dict | None = None):
+    def _send(self, status: int, payload=None, *, raw: bytes | None = None, headers: dict | None = None):  # noqa: D401
         if raw is not None:
             body = raw
         else:
@@ -196,7 +218,45 @@ class _Handler(BaseHTTPRequestHandler):
             headers["Link"] = f'<{self.server.base_url}{path}?page={page + 1}&per_page={per_page}>; rel="next"'
         self._send(200, chunk, headers=headers)
 
+    def _logged_in(self) -> bool:
+        return SESSION_COOKIE in (self.headers.get("Cookie") or "")
+
+    def _html(self, body: str, status: int = 200, headers: dict | None = None):
+        self._send(status, raw=body.encode("utf-8"), headers={"Content-Type": "text/html; charset=utf-8", **(headers or {})})
+
     # ---- 路由 ----
+    def do_POST(self):  # noqa: N802
+        parsed = urllib.parse.urlparse(self.path)
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length).decode("utf-8")
+
+        if parsed.path == "/login/session":
+            form = urllib.parse.parse_qs(body)
+            ok = (form.get("username", [""])[0] == LOGIN_USER
+                  and form.get("password", [""])[0] == LOGIN_PASSWORD)
+            if not ok:
+                return self._html("<p id='flash'>帳號或密碼錯誤</p>", 401)
+            return self._html(
+                "<meta http-equiv='refresh' content='0;url=/'>",
+                302,
+                {"Set-Cookie": f"{SESSION_COOKIE}; Path=/", "Location": "/"},
+            )
+
+        if parsed.path == "/profile/tokens":
+            # Canvas 的設定頁就是打這個端點；需要 session 與 CSRF 標頭
+            if not self._logged_in():
+                return self._send(401, {"errors": [{"message": "not logged in"}]})
+            if self.headers.get("X-CSRF-Token") != CSRF_TOKEN:
+                return self._send(422, {"errors": [{"message": "Invalid Authenticity Token"}]})
+            form = urllib.parse.parse_qs(body)
+            purpose = form.get("access_token[purpose]", ["?"])[0]
+            # 真的 Canvas 之後就會接受這支權杖，假站台也要一樣
+            self.server.issued_tokens.add(BROWSER_TOKEN)
+            self.server.last_token_purpose = purpose
+            return self._send(200, {"visible_token": BROWSER_TOKEN, "purpose": purpose, "id": 1})
+
+        return self._send(404, {"errors": [{"message": f"no route for {parsed.path}"}]})
+
     def do_GET(self):  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
         path, query = parsed.path, urllib.parse.parse_qs(parsed.query)
@@ -212,7 +272,31 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._send(200, raw=body[: len(body) // 2])
             return self._send(200, raw=body)
 
-        if auth != f"Bearer {TOKEN}":
+        if path == "/login":
+            return self._html(
+                "<h1>NTU COOL 登入</h1>"
+                "<form method='post' action='/login/session'>"
+                "<input name='username' id='username'>"
+                "<input name='password' id='password' type='password'>"
+                "<button type='submit' id='submit'>登入</button></form>",
+                headers={"Set-Cookie": f"_csrf_token={urllib.parse.quote(CSRF_TOKEN)}; Path=/"},
+            )
+        if path == "/":
+            if not self._logged_in():
+                return self._html("<meta http-equiv='refresh' content='0;url=/login'>", 302,
+                                  {"Location": "/login"})
+            return self._html("<h1 id='dashboard'>我的課程</h1>")
+        if path == "/profile/settings":
+            if not self._logged_in():
+                return self._html("", 302, {"Location": "/login"})
+            return self._html(
+                "<h1>設定</h1><a class='add_access_token_link' href='#'>+ 新增存取權杖</a>",
+                headers={"Set-Cookie": f"_csrf_token={urllib.parse.quote(CSRF_TOKEN)}; Path=/"},
+            )
+
+        # 網頁登入後，API 也接受 session cookie（Canvas 本來就是這樣）
+        valid = {f"Bearer {t}" for t in {TOKEN, *self.server.issued_tokens}}
+        if auth not in valid and not self._logged_in():
             return self._send(401, {"errors": [{"message": "Invalid access token."}]})
 
         if path == "/api/v1/flaky":
@@ -280,6 +364,8 @@ class FakeCanvas:
         self.httpd.flaky_failures = flaky_failures
         self.httpd.flaky_hits = 0
         self.httpd.truncate_once = {}
+        self.httpd.issued_tokens = set()
+        self.httpd.last_token_purpose = ""
         self.port = self.httpd.server_address[1]
         self.httpd.base_url = self.base_url
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
@@ -291,6 +377,11 @@ class FakeCanvas:
     @property
     def api_root(self) -> str:
         return f"{self.base_url}/api/v1"
+
+    @property
+    def last_token_purpose(self) -> str:
+        """最近一次透過設定頁建立權杖時填的用途。"""
+        return self.httpd.last_token_purpose
 
     def truncate_next_download(self, file_id: int):
         """讓下一次下載這個檔案時被截斷，用來測試「大小不符」的處理。"""

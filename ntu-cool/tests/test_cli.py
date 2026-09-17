@@ -7,6 +7,8 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
+from unittest import mock
+
 import _support  # noqa: F401
 
 from fake_canvas import TOKEN, FakeCanvas
@@ -92,6 +94,33 @@ class TestCli(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(out.strip(), "")
         self.assertTrue((out_dir / "README.md").is_file())
+
+    def test_login_manual_verifies_and_saves(self):
+        saved = {}
+        with mock.patch("getpass.getpass", return_value=f"  {TOKEN}  "), \
+             mock.patch("ntucool.config.save_token_to_env",
+                        side_effect=lambda tok: saved.setdefault("token", tok) or Path("/tmp/x")):
+            code, out, err = self.run_cli("login", "--manual")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(saved["token"], TOKEN)   # 前後空白要被清掉
+        self.assertIn("測試同學", out)
+
+    def test_login_manual_with_a_bad_token_exits_3(self):
+        with mock.patch("getpass.getpass", return_value="wrong"), \
+             mock.patch("ntucool.config.save_token_to_env") as save:
+            code, _, err = self.run_cli("login", "--manual")
+        self.assertEqual(code, 3)
+        self.assertIn("權杖", err)
+        save.assert_not_called()          # 驗證失敗就不該存起來
+
+    def test_login_uses_the_browser_when_playwright_is_available(self):
+        with mock.patch("ntucool.browser_login.is_available", return_value=True), \
+             mock.patch("ntucool.browser_login.login_and_create_token", return_value=TOKEN) as flow, \
+             mock.patch("ntucool.config.save_token_to_env", return_value=Path("/tmp/x")):
+            code, out, err = self.run_cli("login")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(flow.call_args.args[0], self.server.base_url)
+        self.assertIn("撤銷", out)         # 要告訴使用者怎麼收回權杖
 
     def test_init_creates_template_and_refuses_overwrite(self):
         path = Path(self.tmp.name) / "conf.json"

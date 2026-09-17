@@ -50,6 +50,18 @@ ul.files li:last-child{border-bottom:0}
 ul.files a{color:var(--accent);text-decoration:none;word-break:break-all}
 .size{color:var(--muted);font-size:.8rem;margin-left:6px}
 .empty{color:var(--muted);font-size:.9rem}
+ul.rows{list-style:none;padding:0;margin:10px 0 0}
+ul.rows li{padding:10px 0;border-bottom:1px solid var(--line);display:flex;
+  align-items:baseline;gap:10px;font-size:.95rem}
+ul.rows li:last-child{border-bottom:0}
+ul.rows .main{flex:1;min-width:0}
+ul.rows .sub{color:var(--muted);font-size:.8rem;display:block;margin-top:2px}
+.badge{flex:none;font-size:.78rem;font-weight:600;padding:3px 9px;border-radius:999px;
+  background:var(--line);color:var(--muted)}
+.badge.soon{background:rgba(154,91,0,.15);color:var(--warn)}
+.badge.late{background:rgba(179,38,30,.15);color:var(--err)}
+.badge.done{background:rgba(10,125,70,.15);color:var(--ok)}
+.score{font-variant-numeric:tabular-nums;font-weight:600}
 .steps{margin:10px 0 14px;padding-left:1.2em;color:var(--muted);font-size:.9rem}
 .steps li{margin:5px 0}
 .steps b{color:var(--text)}
@@ -98,6 +110,15 @@ a.plain{color:var(--accent)}
   <div id="log"></div>
 </div>
 
+<div class="card hide" id="dashCard">
+  <b>近期作業</b>
+  <div id="upcoming"><p class="empty">同步之後這裡會列出各課即將到期的作業。</p></div>
+  <details id="gradesBox" style="margin-top:12px">
+    <summary>各課成績</summary>
+    <div id="grades"></div>
+  </details>
+</div>
+
 <div class="card hide" id="filesCard">
   <b>已抓下來的課程</b>
   <div id="courses"><p class="empty">還沒有資料，按上面的「開始同步」。</p></div>
@@ -113,6 +134,7 @@ function show(authed){
   $('loginCard').classList.toggle('hide', authed);
   $('mainCard').classList.toggle('hide', !authed);
   $('filesCard').classList.toggle('hide', !authed);
+  $('dashCard').classList.toggle('hide', !authed);
 }
 
 async function loadStatus(){
@@ -171,6 +193,36 @@ async function loadCourses(){
   }catch(e){ box.innerHTML = '<p class="empty">讀取失敗：' + esc(e) + '</p>'; }
 }
 
+function dueBadge(item){
+  if(item.overdue) return ['late', '逾期未交'];
+  if(item.submitted) return ['done', '已繳交'];
+  const d = item.days;
+  if(d < 1) return ['soon', '今天到期'];
+  if(d < 3) return ['soon', `還有 ${Math.ceil(d)} 天`];
+  return ['', `還有 ${Math.ceil(d)} 天`];
+}
+
+async function loadDashboard(){
+  try{
+    const d = await (await api('/api/dashboard')).json();
+    $('upcoming').innerHTML = d.upcoming.length
+      ? `<ul class="rows">${d.upcoming.map(it => {
+          const [cls, text] = dueBadge(it);
+          const title = it.url ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.name)}</a>` : esc(it.name);
+          return `<li><span class="main">${title}
+            <span class="sub">${esc(it.course)}　${esc(it.due_at)}</span></span>
+            <span class="badge ${cls}">${text}</span></li>`;
+        }).join('')}</ul>`
+      : '<p class="empty">最近 30 天沒有要交的作業。</p>';
+    $('grades').innerHTML = d.grades.length
+      ? `<ul class="rows">${d.grades.map(g =>
+          `<li><span class="main">${esc(g.course)}<span class="sub">${esc(g.name)}</span></span>
+           <span class="score">${g.score === null || g.score === undefined ? '—' : esc(g.score)}${g.grade ? ' ' + esc(g.grade) : ''}</span></li>`
+        ).join('')}</ul>`
+      : '<p class="empty">還沒有成績資料。</p>';
+  }catch(e){ $('upcoming').innerHTML = '<p class="empty">讀取失敗：' + esc(e) + '</p>'; }
+}
+
 let polling = null;
 async function poll(from){
   const res = await (await api('/api/progress?from=' + from)).json();
@@ -185,7 +237,7 @@ async function poll(from){
     polling = setTimeout(() => poll(from + res.lines.length), 700);
   }else{
     $('go').disabled = false;
-    loadStatus(); loadCourses();
+    loadStatus(); loadCourses(); loadDashboard();
   }
 }
 
@@ -203,8 +255,8 @@ async function startSync(){
   clearTimeout(polling); poll(0);
 }
 $('go').onclick = startSync;
-$('refresh').onclick = loadCourses;
-loadStatus(); loadCourses();
+$('refresh').onclick = () => { loadCourses(); loadDashboard(); };
+loadStatus(); loadCourses(); loadDashboard();
 </script>
 </body></html>
 """

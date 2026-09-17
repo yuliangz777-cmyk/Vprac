@@ -10,6 +10,7 @@ import urllib.request
 from pathlib import Path
 
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 import _support  # noqa: F401
@@ -276,6 +277,85 @@ class TestAccessKey(WebTestCase):
             status, body, _ = self.get(path, key=False)
             self.assertEqual(status, 204, path)
             self.assertEqual(body, b"")
+
+
+class TestDashboard(WebTestCase):
+    """跨課程的「近期作業 + 成績」，資料直接讀抓下來的 course.json。"""
+
+    def write_course(self, name, assignments, *, score=None, grade=None):
+        course_dir = self.out / name
+        course_dir.mkdir(parents=True, exist_ok=True)
+        (course_dir / "course.json").write_text(
+            json.dumps(
+                {
+                    "course": {"name": name, "course_code": name.split("-")[0], "score": score, "grade": grade},
+                    "assignments": assignments,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def assignment(name, days, *, submitted=False):
+        due = datetime.now(timezone.utc) + timedelta(days=days)
+        return {"name": name, "due_at": due.strftime("%Y-%m-%dT%H:%M:%SZ"), "submitted": submitted}
+
+    def test_orders_by_due_date_and_marks_overdue(self):
+        self.write_course("CSIE1212-x", [
+            self.assignment("下週的", 6),
+            self.assignment("明天的", 1),
+            self.assignment("逾期沒交的", -2),
+        ], score=92.5, grade="A")
+        _, body, _ = self.get("/api/dashboard")
+        data = json.loads(body)
+        self.assertEqual([i["name"] for i in data["upcoming"]], ["逾期沒交的", "明天的", "下週的"])
+        self.assertTrue(data["upcoming"][0]["overdue"])
+        self.assertFalse(data["upcoming"][1]["overdue"])
+        self.assertEqual(data["grades"], [{"course": "CSIE1212", "name": "CSIE1212-x", "score": 92.5, "grade": "A"}])
+
+    def test_hides_what_you_do_not_need_to_act_on(self):
+        self.write_course("C1", [
+            self.assignment("早就交了的", -3, submitted=True),   # 過期但已繳交
+            self.assignment("太久以前的", -40),                  # 超過 7 天前
+            self.assignment("太遙遠的", 60),                     # 超過 30 天後
+            self.assignment("沒有截止日的", 2),
+        ])
+        self.write_course("C2", [{"name": "沒設截止日", "due_at": None, "submitted": False}])
+        _, body, _ = self.get("/api/dashboard")
+        self.assertEqual([i["name"] for i in json.loads(body)["upcoming"]], ["沒有截止日的"])
+
+    def test_merges_every_course_and_labels_each_row(self):
+        self.write_course("CSIE1212-資料結構", [self.assignment("HW1", 2)])
+        self.write_course("PHYS1001-普通物理", [self.assignment("實驗報告", 1)])
+        _, body, _ = self.get("/api/dashboard")
+        rows = json.loads(body)["upcoming"]
+        self.assertEqual([(r["course"], r["name"]) for r in rows],
+                         [("PHYS1001", "實驗報告"), ("CSIE1212", "HW1")])
+
+    def test_survives_a_broken_course_json(self):
+        self.write_course("good", [self.assignment("HW", 1)])
+        broken = self.out / "broken"
+        broken.mkdir(parents=True, exist_ok=True)
+        (broken / "course.json").write_text("{壞掉", encoding="utf-8")
+        _, body, _ = self.get("/api/dashboard")
+        self.assertEqual(len(json.loads(body)["upcoming"]), 1)
+
+    def test_empty_before_the_first_sync(self):
+        _, body, _ = self.get("/api/dashboard")
+        data = json.loads(body)
+        self.assertEqual(data["upcoming"], [])
+        self.assertEqual(data["grades"], [])
+
+    def test_real_sync_populates_the_dashboard(self):
+        self.sync_and_wait()
+        _, body, _ = self.get("/api/dashboard")
+        data = json.loads(body)
+        names = [i["name"] for i in data["upcoming"]]
+        self.assertIn("HW0 環境設定", names)      # 逾期未交
+        self.assertIn("HW1 複雜度證明", names)    # 三天後到期、已繳交
+        self.assertTrue(next(i for i in data["upcoming"] if i["name"] == "HW0 環境設定")["overdue"])
+        self.assertEqual(next(g for g in data["grades"] if g["course"] == "CSIE1212")["score"], 92.5)
 
 
 class TestOptionMapping(WebTestCase):

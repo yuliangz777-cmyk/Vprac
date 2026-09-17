@@ -14,6 +14,7 @@ import socket
 import threading
 import urllib.parse
 from dataclasses import replace
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -21,7 +22,7 @@ from .client import CanvasClient, bearer_header
 from .config import Config, clear_saved_token, save_token_to_env
 from .errors import AuthError, NtuCoolError
 from .manifest import Manifest
-from .models import local_time
+from .models import local_time, parse_iso
 from .report import human_size
 from .scraper import Scraper
 from .webui import PAGE
@@ -124,6 +125,59 @@ class WebApp:
                 if entries:
                     courses.append({"name": course_dir.name, "files": entries})
         return {"courses": courses}
+
+    def dashboard(self, *, now: datetime | None = None) -> dict:
+        """跨課程的一眼看完：近期作業截止 + 各課成績。
+
+        資料直接讀已經抓下來的 course.json，所以離線也看得到，也不會多打 API。
+        """
+        now = now or datetime.now(timezone.utc)
+        upcoming, grades = [], []
+        out = Path(self.config.out_dir)
+        if not out.is_dir():
+            return {"upcoming": [], "grades": [], "generated_at": local_time(now.isoformat())}
+
+        for course_dir in sorted(p for p in out.iterdir() if p.is_dir()):
+            source = course_dir / "course.json"
+            if not source.is_file():
+                continue
+            try:
+                data = json.loads(source.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            course = data.get("course") or {}
+            label = course.get("course_code") or course.get("name") or course_dir.name
+            grades.append(
+                {
+                    "course": label,
+                    "name": course.get("name") or "",
+                    "score": course.get("score"),
+                    "grade": course.get("grade"),
+                }
+            )
+            for assignment in data.get("assignments") or []:
+                due = parse_iso(assignment.get("due_at"))
+                if due is None:
+                    continue
+                days = (due - now).total_seconds() / 86400
+                submitted = bool(assignment.get("submitted"))
+                # 未來 30 天內要交的，加上過去 7 天內逾期又沒交的
+                if days > 30 or days < -7 or (days < 0 and submitted):
+                    continue
+                upcoming.append(
+                    {
+                        "course": label,
+                        "name": assignment.get("name"),
+                        "due_at": local_time(assignment.get("due_at")),
+                        "days": round(days, 2),
+                        "submitted": submitted,
+                        "overdue": days < 0,
+                        "url": assignment.get("url") or "",
+                        "score": assignment.get("score"),
+                    }
+                )
+        upcoming.sort(key=lambda item: item["days"])
+        return {"upcoming": upcoming, "grades": grades, "generated_at": local_time(now.isoformat())}
 
     def resolve_download(self, relative: str) -> Path | None:
         """把網址對應回輸出資料夾裡的檔案，擋掉跳出資料夾的路徑。"""
@@ -282,6 +336,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, PAGE.encode("utf-8"), "text/html; charset=utf-8")
         if path == "/api/status":
             return self._json(self.app.status())
+        if path == "/api/dashboard":
+            return self._json(self.app.dashboard())
         if path == "/api/files":
             return self._json(self.app.files())
         if path == "/api/progress":

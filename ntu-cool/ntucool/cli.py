@@ -19,6 +19,7 @@ from .scraper import Scraper
 
 EPILOG = """\
 範例：
+  python3 -m ntucool login                    # 用學校帳號登入（開瀏覽器）
   python3 -m ntucool init                     # 產生設定檔
   python3 -m ntucool whoami                   # 驗證權杖
   python3 -m ntucool courses                  # 列出這學期的課
@@ -79,6 +80,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("whoami", help="驗證權杖並顯示帳號", parents=[common])
 
+    p_login = sub.add_parser("login", help="用學校帳號登入（開瀏覽器）並存下權杖", parents=[common])
+    p_login.add_argument("--manual", action="store_true", help="不開瀏覽器，自己貼上權杖")
+    p_login.add_argument("--headless", action="store_true", help="不顯示瀏覽器視窗（只有測試會用）")
+
     p_web = sub.add_parser("web", help="開啟本機網頁介面（用瀏覽器操作同步）", parents=[common])
     p_web.add_argument("-o", "--out", dest="out_dir", type=Path, help="輸出資料夾")
     p_web.add_argument("--port", type=int, default=8765, help="連接埠，預設 8765")
@@ -126,7 +131,7 @@ def make_config(args) -> Config:
     if getattr(args, "skip_files", False):
         overrides["sections"] = tuple(s for s in (overrides.get("sections") or ALL_SECTIONS) if s != "files")
     config = load_config(config_path=getattr(args, "config", None), overrides=overrides)
-    return config if getattr(args, "command", "") == "web" else config.validate()
+    return config if getattr(args, "command", "") in ("web", "login") else config.validate()
 
 
 def make_logger(config: Config):
@@ -176,6 +181,39 @@ def cmd_whoami(args) -> int:
     profile = scraper.client.whoami()
     print(f"{profile.get('name')}（{profile.get('primary_email') or profile.get('login_id') or ''}）")
     print(f"站台：{config.base_url}")
+    return 0
+
+
+def cmd_login(args) -> int:
+    from . import browser_login
+    from .client import CanvasClient
+    from .config import save_token_to_env
+
+    config = make_config(args)
+    if args.manual or not browser_login.is_available():
+        if not args.manual:
+            print("沒有偵測到 Playwright，改用手動方式。")
+            print(browser_login.INSTALL_HINT + "\n")
+        print(f"請到 {config.base_url}/profile/settings →「核准的整合」→ + 新增存取權杖")
+        try:
+            import getpass
+
+            token = getpass.getpass("貼上權杖（不會顯示）：").strip()
+        except Exception:  # noqa: BLE001
+            token = input("貼上權杖：").strip()
+    else:
+        token = browser_login.login_and_create_token(
+            config.base_url, on_status=print, headless=args.headless
+        )
+
+    if not token:
+        print("沒有取得權杖。", file=sys.stderr)
+        return 2
+    profile = CanvasClient(config.api_root, token).whoami()
+    path = save_token_to_env(token)
+    print(f"登入成功：{profile.get('name')}")
+    print(f"權杖已存到 {path}（權限 600），之後執行任何指令都會自動讀到。")
+    print("要撤銷的話，到 NTU COOL 的「帳戶 → 設定」把 ntucool 那支權杖刪掉即可。")
     return 0
 
 
@@ -296,6 +334,7 @@ COMMANDS = {
     "courses": cmd_courses,
     "sync": cmd_sync,
     "web": cmd_web,
+    "login": cmd_login,
 }
 
 

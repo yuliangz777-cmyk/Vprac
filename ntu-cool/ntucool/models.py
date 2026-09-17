@@ -31,9 +31,22 @@ def local_time(value: str | None) -> str:
     return dt.astimezone().strftime("%Y-%m-%d %H:%M")
 
 
+def parse_iso(value: str | None) -> datetime | None:
+    """把 Canvas 的 ISO-8601 字串轉成 datetime（帶時區）。"""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
 def normalize_course(raw: dict) -> dict:
     term = raw.get("term") or {}
     teachers = [t.get("display_name") or t.get("name") for t in raw.get("teachers") or []]
+    enrollment = next((e for e in raw.get("enrollments") or [] if e.get("type") == "student"), None)
+    enrollment = enrollment or (raw.get("enrollments") or [{}])[0]
     return {
         "id": raw.get("id"),
         "name": raw.get("name"),
@@ -43,11 +56,11 @@ def normalize_course(raw: dict) -> dict:
         "start_at": raw.get("start_at") or term.get("start_at"),
         "end_at": raw.get("end_at") or term.get("end_at"),
         "teachers": [t for t in teachers if t],
-        "enrollment_state": next(
-            (e.get("enrollment_state") for e in raw.get("enrollments") or [] if e.get("enrollment_state")), ""
-        ),
+        "enrollment_state": enrollment.get("enrollment_state") or "",
         "url": raw.get("html_url") or "",
         "total_students": raw.get("total_students"),
+        "score": enrollment.get("computed_current_score"),
+        "grade": enrollment.get("computed_current_grade"),
     }
 
 
