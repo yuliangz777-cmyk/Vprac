@@ -26,6 +26,7 @@ EPILOG = """\
   python3 -m ntucool sync -c 演算法 --ext pdf,pptx
   python3 -m ntucool sync --only info,assignments --dry-run
   python3 -m ntucool sync --watch 6h          # 常駐，每 6 小時自動同步
+  python3 -m ntucool web                      # 用瀏覽器操作（本機網頁介面）
 """
 
 
@@ -77,6 +78,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("--force", action="store_true", help="覆寫既有檔案")
 
     sub.add_parser("whoami", help="驗證權杖並顯示帳號", parents=[common])
+
+    p_web = sub.add_parser("web", help="開啟本機網頁介面（用瀏覽器操作同步）", parents=[common])
+    p_web.add_argument("-o", "--out", dest="out_dir", type=Path, help="輸出資料夾")
+    p_web.add_argument("--port", type=int, default=8765, help="連接埠，預設 8765")
+    p_web.add_argument("--new-key", action="store_true", dest="new_key",
+                       help="重新產生存取金鑰（舊網址即失效）")
+    p_web.add_argument("--host", default="127.0.0.1",
+                       help="綁定位址，預設只接受本機連線；同網段其他裝置要連請用 0.0.0.0")
 
     for name, help_text in (("courses", "列出可擷取的課程"), ("sync", "擷取課程資訊與檔案")):
         p = sub.add_parser(name, help=help_text, parents=[common])
@@ -168,6 +177,27 @@ def cmd_whoami(args) -> int:
     return 0
 
 
+def cmd_web(args) -> int:
+    from .web import create_server
+
+    config = make_config(args)
+    httpd, url = create_server(config, host=args.host, port=args.port, rotate_key=args.new_key)
+    print("本機網頁介面已啟動，請在瀏覽器打開：")
+    print(f"\n  {url}\n")
+    if args.host not in ("127.0.0.1", "localhost"):
+        print("注意：你綁定了對外位址，同網段的裝置都能連到這個網址（含金鑰才進得來）。")
+    print("這個網址每次啟動都一樣，可以加到書籤。")
+    print("按 Ctrl+C 結束。")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\n已關閉")
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+    return 0
+
+
 def cmd_courses(args) -> int:
     config = make_config(args)
     scraper = make_scraper(config)
@@ -252,7 +282,13 @@ def cmd_sync(args) -> int:
             return 0
 
 
-COMMANDS = {"init": cmd_init, "whoami": cmd_whoami, "courses": cmd_courses, "sync": cmd_sync}
+COMMANDS = {
+    "init": cmd_init,
+    "whoami": cmd_whoami,
+    "courses": cmd_courses,
+    "sync": cmd_sync,
+    "web": cmd_web,
+}
 
 
 def main(argv=None) -> int:

@@ -158,5 +158,8 @@ npm run icons     # 重新產生 icon
 ```bash
 cd ntu-cool
 export NTU_COOL_TOKEN='你的存取權杖'
-python3 -m ntucool sync
+python3 -m ntucool sync      # 指令列
+python3 -m ntucool web       # 或用瀏覽器操作
 ```
+
+也可以在 iPhone 上用「捷徑」一鍵同步，步驟見該專案的 README。
