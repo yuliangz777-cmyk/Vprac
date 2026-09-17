@@ -184,7 +184,7 @@ class TestMobileEntryPoint(unittest.TestCase):
             self.assertTrue(url.startswith("http://127.0.0.1:"))
             with urllib.request.urlopen(url, timeout=10) as resp:
                 page = resp.read().decode("utf-8")
-            self.assertIn("NTU COOL 同步", page)
+            self.assertIn("NTU Course Hub", page)
             self.assertIn("apple-touch-icon", page)   # 加到主畫面要有 icon
         finally:
             httpd.shutdown()

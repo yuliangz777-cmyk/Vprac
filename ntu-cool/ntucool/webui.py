@@ -1,165 +1,465 @@
-"""本機網頁介面的前端（單一檔案，內嵌在 Python 裡以便手機安裝時一起帶走）。"""
+"""本機網頁介面的前端（單一檔案，內嵌在 Python 裡以便手機安裝時一起帶走）。
 
-PAGE = """<!DOCTYPE html>
+設計沿用 NTU Course Hub 原型：手機優先的四分頁（首頁／課程／下載／設定）。
+原型裡的「課表」與「今日課程」拿掉了——NTU COOL 沒有上課時段資料，
+硬填只會變成假資料。
+"""
+
+PAGE = r'''<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#0b62d6">
+<meta name="theme-color" content="#f7f7f9">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="NTU COOL">
+<meta name="apple-mobile-web-app-title" content="Course Hub">
 <link rel="manifest" href="/manifest.webmanifest?k=__KEY__">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%9A%3C/text%3E%3C/svg%3E">
-<title>NTU COOL 同步</title>
+<link rel="icon" href="/icon-192.png">
+<title>NTU Course Hub</title>
 <style>
+*{box-sizing:border-box}
 :root{
-  --bg:#f6f6f7; --card:#fff; --text:#16161a; --muted:#6b6b76; --line:#e3e3e8;
-  --accent:#0b62d6; --accent-text:#fff; --ok:#0a7d46; --warn:#9a5b00; --err:#b3261e;
-  --radius:14px;
+  --bg:#eceef2; --shell:#f7f7f9; --card:#fff; --line:#e7e7eb; --line-soft:#eee;
+  --text:#17171a; --muted:#777; --ink:#111; --on-ink:#fff;
+  --accent:#5457d6; --ok-bg:#e8f7ed; --ok:#217a3c; --warn-bg:#fdf1dc; --warn:#8a5a00;
+  --err-bg:#fff0ee; --err:#b42318; --bar:#eee;
 }
 @media (prefers-color-scheme:dark){
-  :root{ --bg:#101014; --card:#191920; --text:#eceaf0; --muted:#9a9aa6; --line:#2c2c36;
-         --accent:#5c9dff; --accent-text:#0b1220; --ok:#4ade80; --warn:#fbbf24; --err:#ff6b6b; }
+  :root{
+    --bg:#000; --shell:#111114; --card:#1b1b1f; --line:#2c2c32; --line-soft:#26262b;
+    --text:#f2f2f5; --muted:#9a9aa2; --ink:#f2f2f5; --on-ink:#111114;
+    --accent:#8e91ff; --ok-bg:#12331f; --ok:#5ed08a; --warn-bg:#3a2c10; --warn:#f0c064;
+    --err-bg:#3a1a17; --err:#ff9b8f; --bar:#2c2c32;
+  }
 }
-*{box-sizing:border-box}
-body{margin:0;padding:16px;background:var(--bg);color:var(--text);
-  font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",sans-serif;
-  padding-bottom:calc(16px + env(safe-area-inset-bottom))}
-.wrap{max-width:820px;margin:0 auto}
-h1{font-size:1.35rem;margin:.2rem 0 1rem}
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
-  padding:16px;margin-bottom:14px}
-.meta{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:.85rem;margin-bottom:12px}
-.meta b{color:var(--text);font-weight:600}
-button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:13px 18px;
-  background:var(--accent);color:var(--accent-text);cursor:pointer;width:100%}
-button:disabled{opacity:.5;cursor:default}
-button.ghost{background:transparent;color:var(--accent);border:1px solid var(--line);margin-top:8px}
-label.opt{display:flex;align-items:center;gap:9px;margin:9px 0;font-size:.95rem}
-input[type=text]{font:inherit;width:100%;padding:11px 12px;border:1px solid var(--line);
-  border-radius:10px;background:var(--bg);color:var(--text);margin-top:4px}
-input[type=checkbox]{width:19px;height:19px;accent-color:var(--accent);flex:none}
-#log{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;
-  font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;
-  word-break:break-word;max-height:46vh;overflow:auto;margin-top:12px}
-.hide{display:none}
-.status{font-weight:600;margin-bottom:4px}
-.status.running{color:var(--accent)} .status.done{color:var(--ok)} .status.error{color:var(--err)}
-details{border-top:1px solid var(--line);padding-top:10px;margin-top:10px}
-summary{cursor:pointer;font-weight:600}
-ul.files{list-style:none;padding-left:0;margin:8px 0 0}
-ul.files li{padding:7px 0;border-bottom:1px solid var(--line);font-size:.92rem}
-ul.files li:last-child{border-bottom:0}
-ul.files a{color:var(--accent);text-decoration:none;word-break:break-all}
-.size{color:var(--muted);font-size:.8rem;margin-left:6px}
-.empty{color:var(--muted);font-size:.9rem}
-ul.rows{list-style:none;padding:0;margin:10px 0 0}
-ul.rows li{padding:10px 0;border-bottom:1px solid var(--line);display:flex;
-  align-items:baseline;gap:10px;font-size:.95rem}
-ul.rows li:last-child{border-bottom:0}
-ul.rows .main{flex:1;min-width:0}
-ul.rows .sub{color:var(--muted);font-size:.8rem;display:block;margin-top:2px}
-.badge{flex:none;font-size:.78rem;font-weight:600;padding:3px 9px;border-radius:999px;
-  background:var(--line);color:var(--muted)}
-.badge.soon{background:rgba(154,91,0,.15);color:var(--warn)}
-.badge.late{background:rgba(179,38,30,.15);color:var(--err)}
-.badge.done{background:rgba(10,125,70,.15);color:var(--ok)}
-.score{font-variant-numeric:tabular-nums;font-weight:600}
-#offline{background:rgba(154,91,0,.15);color:var(--warn);border-radius:10px;padding:10px 14px;
+html{background:var(--bg)}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Noto Sans TC",sans-serif;
+  color:var(--text);background:var(--bg)}
+button,select,input{font:inherit}
+.app-shell{max-width:920px;min-height:100vh;margin:auto;background:var(--shell);
+  padding:0 22px calc(104px + env(safe-area-inset-bottom))}
+.topbar{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--shell) 88%,transparent);
+  backdrop-filter:blur(18px);display:flex;align-items:center;justify-content:space-between;
+  padding:calc(20px + env(safe-area-inset-top)) 0 14px}
+.topbar h1{margin:2px 0 0;font-size:28px}
+.eyebrow{font-size:11px;letter-spacing:.14em;color:var(--muted)}
+.avatar{width:42px;height:42px;border-radius:50%;border:0;background:var(--ink);color:var(--on-ink);font-weight:700}
+.page{display:none}
+.page.active{display:block}
+.hide{display:none !important}
+.hero{padding:26px;border-radius:28px;background:var(--ink);color:var(--on-ink);margin:10px 0 26px}
+.hero h2{font-size:28px;margin:4px 0}
+.hero p{margin:6px 0;color:color-mix(in srgb,var(--on-ink) 72%,transparent)}
+.hero .primary{margin-top:18px;width:100%}
+.primary{border:0;border-radius:14px;background:var(--on-ink);color:var(--ink);padding:14px 17px;font-weight:700;cursor:pointer}
+.hero .primary{background:var(--on-ink);color:var(--ink)}
+.primary:disabled{opacity:.55;cursor:default}
+.compact{padding:10px 13px;background:var(--ink);color:var(--on-ink);border-radius:12px;border:0;font-weight:700}
+.secondary{border:0;border-radius:12px;background:var(--bar);color:var(--text);padding:11px 14px;font-weight:600;cursor:pointer}
+.link,.back{border:0;background:none;color:var(--accent);font-weight:600;cursor:pointer;padding:0}
+.section-head{display:flex;align-items:center;justify-content:space-between;margin-top:26px;gap:12px}
+.section-head h2,.section-head h3{margin:0}
+.muted,small{color:var(--muted);display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;overflow:hidden;margin-top:12px}
+.row{display:flex;align-items:center;gap:14px;padding:16px 18px;border-bottom:1px solid var(--line-soft)}
+.row:last-child{border:0}
+.row>div{flex:1;min-width:0}
+.row b{display:block;overflow-wrap:anywhere}
+.pill,.ok{font-size:12px;padding:6px 10px;border-radius:999px;background:var(--ok-bg);color:var(--ok);
+  white-space:nowrap;flex:none;font-weight:600;display:inline-block}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.pill.late{background:var(--err-bg);color:var(--err)}
+.pill.plain{background:var(--bar);color:var(--muted)}
+.storage{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:18px}
+.course-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:14px}
+@media (max-width:380px){.course-grid{grid-template-columns:1fr}}
+.course-card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px;
+  min-height:150px;display:flex;flex-direction:column;justify-content:space-between;gap:12px;
+  cursor:pointer;text-align:left;color:inherit}
+.course-card h3{margin:8px 0 3px;font-size:16px;overflow-wrap:anywhere}
+.course-dot{width:12px;height:12px;border-radius:50%;background:var(--accent);display:block}
+.download-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0}
+.download-summary>div{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px}
+.download-summary strong{display:block;font-size:22px}
+.empty{text-align:center;padding:55px 20px;color:var(--muted)}
+.empty b{color:var(--text);display:block;margin-bottom:6px}
+.file-icon{font-size:34px}
+.download-item{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:15px;margin:10px 0}
+.progress{height:7px;background:var(--bar);border-radius:10px;margin-top:12px;overflow:hidden}
+.progress span{display:block;height:100%;background:var(--ink);width:0;transition:width .3s}
+.progress span.failed{background:var(--err)}
+.file-row{display:flex;align-items:center;gap:13px;padding:14px 18px;border-bottom:1px solid var(--line-soft)}
+.file-row:last-child{border:0}
+.file-row .icon{flex:none;width:40px;height:40px;border-radius:11px;background:var(--bar);color:var(--muted);
+  display:grid;place-items:center;font-size:10px;font-weight:700}
+.file-row a{color:inherit;text-decoration:none;overflow-wrap:anywhere}
+.switch input{display:none}
+.switch span{display:block;width:44px;height:26px;background:var(--bar);border-radius:20px;position:relative;
+  transition:background .2s;flex:none}
+.switch span:after{content:"";position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;
+  top:2px;left:2px;box-shadow:0 1px 3px #0005;transition:left .2s}
+.switch input:checked+span{background:#34c759}
+.switch input:checked+span:after{left:20px}
+.storagebar{height:10px;background:var(--bar);border-radius:20px;margin:18px;overflow:hidden}
+.storagebar span{display:block;height:100%;background:var(--ink)}
+.danger-btn{margin:12px 18px 18px;width:calc(100% - 36px);border:0;border-radius:12px;padding:12px;
+  color:var(--err);background:var(--err-bg);font-weight:600;cursor:pointer}
+.note{font-size:12px;color:var(--muted);line-height:1.6;margin-top:16px}
+.tabbar{position:fixed;bottom:calc(12px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
+  z-index:10;width:min(700px,calc(100% - 28px));display:grid;grid-template-columns:repeat(4,1fr);
+  background:color-mix(in srgb,var(--card) 92%,transparent);backdrop-filter:blur(20px);
+  border:1px solid var(--line);border-radius:22px;padding:7px;box-shadow:0 10px 35px #0003}
+.tab{border:0;background:none;padding:8px 3px;color:var(--muted);font-size:11px;cursor:pointer}
+.tab span{display:block;font-size:19px;margin-bottom:3px}
+.tab.active{color:var(--text);font-weight:700}
+.modal-wrap{display:none;position:fixed;inset:0;z-index:20;background:#0007;align-items:end;justify-content:center}
+.modal-wrap.show{display:flex}
+.modal{background:var(--shell);width:min(620px,100%);border-radius:28px 28px 0 0;padding:24px;
+  padding-bottom:calc(24px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto}
+.modal-head{display:flex;justify-content:space-between;align-items:start;gap:12px}
+.modal-head h2{margin:3px 0}
+.modal-head button{border:0;background:var(--bar);color:var(--text);border-radius:50%;width:34px;height:34px;font-size:22px;cursor:pointer}
+.check-row{display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--line);
+  border-radius:14px;padding:14px;margin:9px 0}
+.check-row input{width:20px;height:20px;accent-color:var(--accent);flex:none}
+.check-row div{flex:1;min-width:0}
+.estimate{display:flex;justify-content:space-between;align-items:center;margin:16px 0;color:var(--muted)}
+.full{width:100%}
+#offline{background:var(--warn-bg);color:var(--warn);border-radius:14px;padding:11px 16px;
   margin-bottom:14px;font-size:.9rem;font-weight:600}
-.steps{margin:10px 0 14px;padding-left:1.2em;color:var(--muted);font-size:.9rem}
-.steps li{margin:5px 0}
+.steps{margin:10px 0 16px;padding-left:1.2em;color:var(--muted);font-size:.9rem;line-height:1.7}
 .steps b{color:var(--text)}
-input[type=password]{font:inherit;width:100%;padding:12px;border:1px solid var(--line);
-  border-radius:10px;background:var(--bg);color:var(--text)}
+#token{width:100%;padding:13px;border:1px solid var(--line);border-radius:12px;
+  background:var(--card);color:var(--text)}
 .err{color:var(--err);font-size:.9rem;margin-top:10px;min-height:1.2em}
-.linkbtn{background:none;border:0;color:var(--muted);font-size:.82rem;padding:0;width:auto;
-  text-decoration:underline;cursor:pointer}
-a.plain{color:var(--accent)}
+#log{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px;
+  font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;
+  word-break:break-word;max-height:34vh;overflow:auto;margin-top:12px}
+.status{font-weight:700;margin-top:14px}
+.status.running{color:var(--accent)} .status.done{color:var(--ok)} .status.error{color:var(--err)}
+.detail-head{margin:10px 0 18px}
+.detail-head h2{margin:4px 0}
 </style>
 </head>
-<body><div class="wrap">
-<h1>NTU COOL 同步</h1>
-<div id="offline" class="hide">離線中——顯示上次同步的資料</div>
+<body>
+<div class="app-shell">
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">NTU COURSE HUB</div>
+      <h1 id="pageTitle">首頁</h1>
+    </div>
+    <button class="avatar" id="avatar" aria-label="帳號" onclick="go('settings')">·</button>
+  </header>
 
-<div class="card hide" id="loginCard">
-  <b>先登入</b>
-  <ol class="steps">
-    <li>在 NTU COOL 開啟 <a class="plain" id="tokenLink" href="#" target="_blank" rel="noopener">帳戶 → 設定</a></li>
-    <li>捲到「核准的整合」→ 按 <b>+ 新增存取權杖</b>，用途填 <b>ntucool</b></li>
-    <li>把產生的權杖貼到下面（<b>它只會顯示一次</b>）</li>
-  </ol>
-  <input type="password" id="token" placeholder="貼上存取權杖" autocomplete="off" spellcheck="false">
-  <div class="err" id="loginErr"></div>
-  <button id="login">登入並開始下載</button>
-  <p class="empty" style="margin-bottom:0">
-    這裡用的是 NTU COOL 的存取權杖，不是你的學校帳號密碼。
-    權杖只存在這台電腦上（<code>~/.config/ntucool/.env</code>，權限 600），不會傳給任何人。
-  </p>
+  <div id="offline" class="hide">離線中——顯示上次同步的資料</div>
+
+  <main>
+    <section class="page active" data-page="login" id="loginCard">
+      <div class="hero">
+        <p class="muted" style="color:inherit;opacity:.7">開始之前</p>
+        <h2>先連結 NTU COOL</h2>
+        <p>用存取權杖連結，不是你的學校帳號密碼。</p>
+      </div>
+      <div class="card" style="padding:18px">
+        <ol class="steps">
+          <li>在 NTU COOL 開啟 <a class="link" id="tokenLink" href="#" target="_blank" rel="noopener">帳戶 → 設定</a></li>
+          <li>捲到「核准的整合」→ 按 <b>+ 新增存取權杖</b>，用途填 <b>ntucool</b></li>
+          <li>把產生的權杖貼到下面（<b>只會顯示一次</b>）</li>
+        </ol>
+        <input type="password" id="token" placeholder="貼上存取權杖" autocomplete="off" spellcheck="false">
+        <div class="err" id="loginErr"></div>
+        <button class="compact full" id="login" style="padding:14px">連結並開始下載</button>
+      </div>
+      <p class="note">權杖只存在這台裝置（<code>~/.config/ntucool/.env</code>，權限 600），
+        不會傳給任何人。隨時可以在 NTU COOL 的設定頁把它撤銷。</p>
+    </section>
+
+    <section class="page" data-page="home">
+      <div class="hero">
+        <p class="muted" style="color:inherit;opacity:.7" id="heroTerm">　</p>
+        <h2 id="heroGreeting">你好</h2>
+        <p id="heroSummary">還沒有資料，先同步一次。</p>
+        <button class="primary" onclick="openBulkModal()">下載本學期文件</button>
+      </div>
+
+      <div class="section-head"><h3>近期作業</h3><button class="link" onclick="go('courses')">查看課程</button></div>
+      <div id="upcoming"></div>
+
+      <div class="section-head"><h3>文件同步</h3><span class="muted" id="syncText">尚未同步</span></div>
+      <div class="card">
+        <div class="storage">
+          <div><b>本機課程文件</b><small id="storageLine">0 個檔案</small></div>
+          <button class="secondary" id="go" onclick="startSync()">同步新文件</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" data-page="courses">
+      <div class="section-head"><h2>我的課程</h2><span class="muted" id="courseCount"></span></div>
+      <div class="course-grid" id="courseGrid"></div>
+    </section>
+
+    <section class="page" data-page="downloads">
+      <div class="section-head"><h2>同步工作</h2><button class="compact" onclick="openBulkModal()">＋ 新增下載</button></div>
+      <div class="download-summary">
+        <div><strong id="dlRunning">0</strong><small>進行中</small></div>
+        <div><strong id="dlFiles">0</strong><small>已完成檔案</small></div>
+        <div><strong id="dlSize">0 B</strong><small>已使用</small></div>
+      </div>
+      <div class="status hide" id="statusLine"></div>
+      <div id="downloadList"></div>
+      <details id="logBox" class="card hide" style="padding:14px 18px">
+        <summary style="cursor:pointer;font-weight:600">同步記錄</summary>
+        <div id="log"></div>
+      </details>
+    </section>
+
+    <section class="page" data-page="settings">
+      <div class="card" style="margin-top:20px">
+        <div class="row"><div><b>NTU COOL</b><small id="settingsAccount">未連結</small></div><span class="ok" id="settingsState">未連結</span></div>
+        <div class="row"><div><b>只下載 PDF／簡報</b><small>略過影片與壓縮檔</small></div>
+          <label class="switch"><input type="checkbox" id="pdfOnly"><span></span></label></div>
+        <div class="row"><div><b>略過大檔</b><small>超過 50MB 不下載</small></div>
+          <label class="switch"><input type="checkbox" id="skipBig"><span></span></label></div>
+      </div>
+      <div class="section-head"><h3>儲存空間</h3></div>
+      <div class="card">
+        <div class="storagebar"><span id="storageBar" style="width:0"></span></div>
+        <div class="row"><span>課程文件</span><b id="storageSize">0 B</b></div>
+        <div class="row"><div><b>存放位置</b><small id="outDir">—</small></div></div>
+        <button class="danger-btn" id="logout">登出（清除這台裝置上的權杖）</button>
+      </div>
+      <p class="note">檔案存在上面那個資料夾裡，登出不會刪除已經下載的檔案。</p>
+    </section>
+
+    <section class="page" data-page="detail">
+      <button class="back" onclick="go('courses')">‹ 所有課程</button>
+      <div id="courseDetail"></div>
+    </section>
+  </main>
+
+  <nav class="tabbar hide" id="tabbar">
+    <button class="tab active" data-target="home" onclick="go('home')"><span>⌂</span>首頁</button>
+    <button class="tab" data-target="courses" onclick="go('courses')"><span>▤</span>課程</button>
+    <button class="tab" data-target="downloads" onclick="go('downloads')"><span>↓</span>下載</button>
+    <button class="tab" data-target="settings" onclick="go('settings')"><span>⚙</span>設定</button>
+  </nav>
 </div>
 
-<div class="card hide" id="mainCard">
-  <div class="meta" id="meta"><span>載入中…</span></div>
-  <label class="opt"><input type="checkbox" id="pdfOnly"> 只下載 PDF／簡報</label>
-  <label class="opt"><input type="checkbox" id="skipBig"> 略過 50MB 以上的大檔</label>
-  <label class="opt" style="display:block">
-    只同步這些課程（留空＝全部，可用課號或課名，逗號分隔）
-    <input type="text" id="filter" placeholder="例如：CSIE1212, 演算法">
-  </label>
-  <button id="go">開始同步</button>
-  <button class="ghost" id="refresh">重新整理檔案清單</button>
-  <p style="margin:12px 0 0"><button class="linkbtn" id="logout">登出（清除這台電腦上的權杖）</button></p>
+<div class="modal-wrap" id="bulkModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div><small>批次下載</small><h2>選擇要同步的課程</h2></div>
+      <button onclick="closeBulkModal()" aria-label="關閉">×</button>
+    </div>
+    <p class="muted">留空代表全部。同步只會抓新增或更新過的檔案。</p>
+    <div id="bulkCourses"></div>
+    <div class="estimate"><span>已選</span><b><span id="selectedCount">全部</span></b></div>
+    <button class="compact full" style="padding:15px" onclick="startSync()">開始同步</button>
+  </div>
 </div>
 
-<div class="card hide" id="logCard">
-  <div class="status" id="status"></div>
-  <div id="log"></div>
-</div>
-
-<div class="card hide" id="dashCard">
-  <b>近期作業</b>
-  <div id="upcoming"><p class="empty">同步之後這裡會列出各課即將到期的作業。</p></div>
-  <details id="gradesBox" style="margin-top:12px">
-    <summary>各課成績</summary>
-    <div id="grades"></div>
-  </details>
-</div>
-
-<div class="card hide" id="filesCard">
-  <b>已抓下來的課程</b>
-  <div id="courses"><p class="empty">還沒有資料，按上面的「開始同步」。</p></div>
-</div>
-</div>
 <script>
 const KEY = new URLSearchParams(location.search).get('k') || '__KEY__';
 const api = (path, opts) => fetch(path + (path.includes('?') ? '&' : '?') + 'k=' + encodeURIComponent(KEY), opts);
 const $ = id => document.getElementById(id);
-const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const titles = {home:'首頁', courses:'課程', downloads:'下載', settings:'設定', detail:'課程', login:'連結帳號'};
+let state = {authenticated:false, courses:[]};
 
-function show(authed){
-  $('loginCard').classList.toggle('hide', authed);
-  $('mainCard').classList.toggle('hide', !authed);
-  $('filesCard').classList.toggle('hide', !authed);
-  $('dashCard').classList.toggle('hide', !authed);
+function go(name){
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.dataset.page === name));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.target === name));
+  $('pageTitle').textContent = titles[name] || '';
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function initials(name){
+  const clean = String(name || '').trim();
+  if(!clean) return '·';
+  return /[A-Za-z]/.test(clean[0]) ? clean.split(/\s+/).map(w => w[0]).join('').slice(0,2).toUpperCase()
+                                   : clean.slice(-2);
 }
 
 async function loadStatus(){
+  let s;
+  try{ s = await (await api('/api/status')).json(); }
+  catch(e){ return null; }
+  state.authenticated = s.authenticated;
+  $('tokenLink').href = String(s.base_url || '').replace(/\/$/, '') + '/profile/settings';
+  $('loginCard').classList.toggle('hide', s.authenticated);
+  $('tabbar').classList.toggle('hide', !s.authenticated);
+  if(!s.authenticated){ go('login'); return s; }
+  if(document.querySelector('.page[data-page="login"]').classList.contains('active')) go('home');
+
+  $('avatar').textContent = initials(s.user);
+  $('heroTerm').textContent = s.term || '';
+  $('heroGreeting').textContent = s.user ? `你好，${s.user}` : '你好';
+  $('syncText').textContent = s.last_sync ? `上次同步：${s.last_sync}` : '尚未同步';
+  $('storageLine').textContent = `${s.files} 個檔案 · ${s.size}`;
+  $('storageSize').textContent = s.size;
+  $('dlFiles').textContent = s.files;
+  $('dlSize').textContent = s.size;
+  $('outDir').textContent = s.out_dir;
+  $('settingsAccount').textContent = s.user ? `已連結 · ${s.user}` : '已連結';
+  $('settingsState').textContent = '已連結';
+  const pct = Math.min(100, Math.round((s.bytes || 0) / (2 * 1024 * 1024 * 1024) * 100));
+  $('storageBar').style.width = pct + '%';
+  return s;
+}
+
+async function loadDashboard(){
   try{
-    const s = await (await api('/api/status')).json();
-    show(s.authenticated);
-    $('tokenLink').href = s.base_url.replace(/\/$/, '') + '/profile/settings';
-    if(!s.authenticated) return s;
-    $('meta').innerHTML = [
-      s.user ? `帳號 <b>${esc(s.user)}</b>` : '',
-      `站台 <b>${esc(s.base_url)}</b>`,
-      `輸出 <b>${esc(s.out_dir)}</b>`,
-      s.last_sync ? `上次同步 <b>${esc(s.last_sync)}</b>` : '尚未同步過',
-    ].filter(Boolean).map(h => `<span>${h}</span>`).join('');
-    return s;
-  }catch(e){ $('meta').textContent = '無法連上本機伺服器：' + e; }
+    const d = await (await api('/api/dashboard')).json();
+    const soon = d.upcoming.filter(i => !i.submitted).length;
+    $('heroSummary').textContent = soon ? `有 ${soon} 份作業還沒交。` : '目前沒有待繳的作業。';
+    $('upcoming').innerHTML = d.upcoming.length
+      ? `<div class="card">${d.upcoming.map(i => {
+          const cls = i.overdue ? 'late' : (i.submitted ? '' : (i.days < 3 ? 'warn' : 'plain'));
+          const text = i.overdue ? '逾期未交' : (i.submitted ? '已繳交' :
+                       (i.days < 1 ? '今天到期' : `還有 ${Math.ceil(i.days)} 天`));
+          const title = i.url ? `<a class="link" href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.name)}</a>` : esc(i.name);
+          return `<div class="row"><div><b>${title}</b><small>${esc(i.course)} · ${esc(i.due_at)}</small></div>
+                  <span class="pill ${cls}">${text}</span></div>`;
+        }).join('')}</div>`
+      : '<div class="card"><div class="empty"><b>沒有近期作業</b><p>最近 30 天內沒有要交的東西。</p></div></div>';
+  }catch(e){ /* 離線時沿用畫面上的內容 */ }
+}
+
+async function loadCourses(){
+  try{
+    const data = await (await api('/api/courses')).json();
+    state.courses = data.courses;
+    $('courseCount').textContent = data.courses.length ? `${data.courses.length} 門` : '';
+    $('courseGrid').innerHTML = data.courses.length
+      ? data.courses.map(c => `<button class="course-card" onclick="openCourse('${esc(c.dir)}')">
+          <div><span class="course-dot"></span><h3>${esc(c.name)}</h3>
+            <small>${esc(c.code)}${c.teacher ? ' · ' + esc(c.teacher) : ''}</small></div>
+          <div><b>${c.files} 個文件</b><small>${esc(c.size)}${c.score != null ? ' · ' + esc(c.score) + ' 分' : ''}</small></div>
+        </button>`).join('')
+      : '<div class="card" style="grid-column:1/-1"><div class="empty"><b>還沒有課程</b><p>先回首頁按「同步新文件」。</p></div></div>';
+    $('bulkCourses').innerHTML = data.courses.map(c =>
+      `<label class="check-row"><input type="checkbox" value="${esc(c.code || c.name)}" onchange="updateEstimate()">
+       <div><b>${esc(c.name)}</b><small>${c.files} 個文件 · ${esc(c.size)}</small></div></label>`).join('')
+      || '<p class="muted">還沒有課程資料，直接按「開始同步」會抓全部。</p>';
+    updateEstimate();
+  }catch(e){ /* 離線 */ }
+}
+
+function folderLabel(folder){
+  const clean = String(folder || '').replace(/^files\/?/, '').replace(/^\.$/, '');
+  return clean ? esc(clean) + ' · ' : '';
+}
+
+async function openCourse(dir){
+  go('detail');
+  $('courseDetail').innerHTML = '<p class="muted">載入中…</p>';
+  try{
+    const c = await (await api('/api/course?dir=' + encodeURIComponent(dir))).json();
+    $('pageTitle').textContent = c.code || '課程';
+    const files = c.files.filter(f => f.folder.startsWith('files'));
+    const docs = c.files.filter(f => !f.folder.startsWith('files'));
+    const fileRow = f => `<div class="file-row"><span class="icon">${esc(f.ext)}</span>
+        <div><a href="/files/${encodeURI(f.path)}?k=${encodeURIComponent(KEY)}" target="_blank" rel="noopener">${esc(f.name)}</a>
+        <small>${folderLabel(f.folder)}${esc(f.size)}</small></div></div>`;
+    $('courseDetail').innerHTML = `
+      <div class="detail-head"><small>${esc(c.code)}${c.term ? ' · ' + esc(c.term) : ''}</small>
+        <h2>${esc(c.name)}</h2><p class="muted">${esc(c.teacher)}</p>
+        ${c.url ? `<a class="link" href="${esc(c.url)}" target="_blank" rel="noopener">在 NTU COOL 開啟 ›</a>` : ''}</div>
+      ${c.assignments.length ? `<div class="section-head"><h3>作業</h3></div><div class="card">${
+        c.assignments.map(a => `<div class="row"><div><b>${esc(a.name)}</b>
+          <small>${a.due_at ? '截止 ' + esc(a.due_at.slice(0,10)) : '未設截止日'}</small></div>
+          <span class="pill ${a.submitted ? '' : 'plain'}">${a.submitted ? '已繳交' : '未繳交'}</span></div>`).join('')}</div>` : ''}
+      <div class="section-head"><h3>課程文件</h3><span class="muted">${files.length} 個</span></div>
+      <div class="card">${files.length ? files.map(fileRow).join('')
+        : '<div class="empty"><b>沒有檔案</b><p>這門課可能關閉了檔案分頁。</p></div>'}</div>
+      ${docs.length ? `<div class="section-head"><h3>整理好的資料</h3></div><div class="card">${docs.map(fileRow).join('')}</div>` : ''}`;
+  }catch(e){ $('courseDetail').innerHTML = '<p class="muted">讀取失敗：' + esc(e) + '</p>'; }
+}
+
+function openBulkModal(){ $('bulkModal').classList.add('show'); updateEstimate(); }
+function closeBulkModal(){ $('bulkModal').classList.remove('show'); }
+function selectedCourses(){
+  return [...document.querySelectorAll('#bulkCourses input:checked')].map(i => i.value);
+}
+function updateEstimate(){
+  const picked = selectedCourses();
+  $('selectedCount').textContent = picked.length ? `${picked.length} 門課程` : '全部課程';
+}
+
+let polling = null, logFrom = 0;
+async function startSync(){
+  closeBulkModal();
+  $('go').disabled = true;
+  $('logBox').classList.remove('hide');
+  $('statusLine').classList.remove('hide');
+  $('log').textContent = '';
+  logFrom = 0;
+  const body = JSON.stringify({
+    pdf_only: $('pdfOnly').checked,
+    skip_big: $('skipBig').checked,
+    courses: selectedCourses().join(','),
+  });
+  try{
+    const res = await api('/api/sync', {method:'POST', headers:{'Content-Type':'application/json'}, body});
+    if(!res.ok){
+      $('statusLine').className = 'status error';
+      $('statusLine').textContent = '無法開始：' + await res.text();
+      $('go').disabled = false;
+      return;
+    }
+  }catch(e){
+    $('statusLine').className = 'status error';
+    $('statusLine').textContent = '連不上本機伺服器（可能沒開著）';
+    $('go').disabled = false;
+    return;
+  }
+  clearTimeout(polling);
+  go('downloads');
+  poll();
+}
+
+async function poll(){
+  let res;
+  try{ res = await (await api('/api/progress?from=' + logFrom)).json(); }
+  catch(e){ $('go').disabled = false; return; }
+  if(res.lines.length){
+    logFrom += res.lines.length;
+    $('log').textContent += res.lines.join('\n') + '\n';
+    $('log').scrollTop = $('log').scrollHeight;
+  }
+  renderDownloads(res.courses || [], res.status);
+  const line = $('statusLine');
+  line.className = 'status ' + res.status;
+  line.textContent = {running:'同步中…', done:'同步完成', error:'發生錯誤', idle:''}[res.status] || '';
+  if(res.status === 'running'){
+    polling = setTimeout(poll, 700);
+  }else{
+    $('go').disabled = false;
+    loadStatus(); loadCourses(); loadDashboard();
+  }
+}
+
+function renderDownloads(courses, status){
+  $('dlRunning').textContent = courses.filter(c => c.state === 'running').length;
+  if(!courses.length){
+    $('downloadList').innerHTML = '<div class="card"><div class="empty"><div class="file-icon">↓</div>'
+      + '<b>目前沒有下載工作</b><p>從首頁或上面的「＋ 新增下載」開始。</p></div></div>';
+    return;
+  }
+  $('downloadList').innerHTML = courses.map(c => {
+    const label = c.state === 'failed' ? '失敗'
+      : c.state === 'done' ? (c.done ? `完成 · ${c.done} 個新檔案` : '完成 · 無新檔案')
+      : (c.total ? `${c.done}/${c.total}` : '檢查中…');
+    return `<div class="download-item">
+      <div class="row" style="padding:0;border:0"><div><b>${esc(c.course)}</b>
+        <small>${esc(c.error || label)}</small></div><span class="muted">${c.percent}%</span></div>
+      <div class="progress"><span class="${c.state === 'failed' ? 'failed' : ''}" style="width:${c.percent}%"></span></div>
+    </div>`;
+  }).join('');
 }
 
 $('login').onclick = async () => {
@@ -171,10 +471,11 @@ $('login').onclick = async () => {
     const res = await api('/api/login', {method:'POST', headers:{'Content-Type':'application/json'},
                                          body: JSON.stringify({token})});
     const data = await res.json();
-    if(!res.ok){ $('loginErr').textContent = data.error || '登入失敗'; return; }
+    if(!res.ok){ $('loginErr').textContent = data.error || '連結失敗'; return; }
     $('token').value = '';
     await loadStatus();
-    startSync();                      // 登入完直接開始抓全部課程
+    go('home');
+    startSync();
   }catch(e){ $('loginErr').textContent = String(e); }
   finally{ $('login').disabled = false; }
 };
@@ -183,100 +484,29 @@ $('token').addEventListener('keydown', e => { if(e.key === 'Enter') $('login').c
 $('logout').onclick = async () => {
   await api('/api/logout', {method:'POST'});
   clearTimeout(polling);
-  $('logCard').classList.add('hide');
   loadStatus();
 };
 
-async function loadCourses(){
-  const box = $('courses');
-  try{
-    const data = await (await api('/api/files')).json();
-    if(!data.courses.length){ box.innerHTML = '<p class="empty">還沒有資料，按上面的「開始同步」。</p>'; return; }
-    box.innerHTML = data.courses.map(c => `
-      <details>
-        <summary>${esc(c.name)} <span class="size">${c.files.length} 個檔案</span></summary>
-        <ul class="files">${c.files.map(f =>
-          `<li><a href="/files/${encodeURI(f.path)}?k=${encodeURIComponent(KEY)}" target="_blank" rel="noopener">${esc(f.name)}</a><span class="size">${esc(f.size)}</span></li>`
-        ).join('')}</ul>
-      </details>`).join('');
-  }catch(e){ box.innerHTML = '<p class="empty">讀取失敗：' + esc(e) + '</p>'; }
+for(const id of ['pdfOnly','skipBig']){
+  try{ $(id).checked = localStorage.getItem('ntucool.' + id) === '1'; }catch(e){}
+  $(id).onchange = () => { try{ localStorage.setItem('ntucool.' + id, $(id).checked ? '1' : '0'); }catch(e){} };
 }
-
-function dueBadge(item){
-  if(item.overdue) return ['late', '逾期未交'];
-  if(item.submitted) return ['done', '已繳交'];
-  const d = item.days;
-  if(d < 1) return ['soon', '今天到期'];
-  if(d < 3) return ['soon', `還有 ${Math.ceil(d)} 天`];
-  return ['', `還有 ${Math.ceil(d)} 天`];
-}
-
-async function loadDashboard(){
-  try{
-    const d = await (await api('/api/dashboard')).json();
-    $('upcoming').innerHTML = d.upcoming.length
-      ? `<ul class="rows">${d.upcoming.map(it => {
-          const [cls, text] = dueBadge(it);
-          const title = it.url ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.name)}</a>` : esc(it.name);
-          return `<li><span class="main">${title}
-            <span class="sub">${esc(it.course)}　${esc(it.due_at)}</span></span>
-            <span class="badge ${cls}">${text}</span></li>`;
-        }).join('')}</ul>`
-      : '<p class="empty">最近 30 天沒有要交的作業。</p>';
-    $('grades').innerHTML = d.grades.length
-      ? `<ul class="rows">${d.grades.map(g =>
-          `<li><span class="main">${esc(g.course)}<span class="sub">${esc(g.name)}</span></span>
-           <span class="score">${g.score === null || g.score === undefined ? '—' : esc(g.score)}${g.grade ? ' ' + esc(g.grade) : ''}</span></li>`
-        ).join('')}</ul>`
-      : '<p class="empty">還沒有成績資料。</p>';
-  }catch(e){ $('upcoming').innerHTML = '<p class="empty">讀取失敗：' + esc(e) + '</p>'; }
-}
-
-let polling = null;
-async function poll(from){
-  const res = await (await api('/api/progress?from=' + from)).json();
-  if(res.lines.length){
-    $('log').textContent += res.lines.join('\\n') + '\\n';
-    $('log').scrollTop = $('log').scrollHeight;
-  }
-  const st = $('status');
-  st.className = 'status ' + res.status;
-  st.textContent = {running:'同步中…', done:'完成', error:'發生錯誤', idle:''}[res.status] || '';
-  if(res.status === 'running'){
-    polling = setTimeout(() => poll(from + res.lines.length), 700);
-  }else{
-    $('go').disabled = false;
-    loadStatus(); loadCourses(); loadDashboard();
-  }
-}
-
-async function startSync(){
-  $('go').disabled = true;
-  $('logCard').classList.remove('hide');
-  $('log').textContent = '';
-  const body = JSON.stringify({
-    pdf_only: $('pdfOnly').checked,
-    skip_big: $('skipBig').checked,
-    courses: $('filter').value,
-  });
-  const res = await api('/api/sync', {method:'POST', headers:{'Content-Type':'application/json'}, body});
-  if(!res.ok){ $('status').className='status error'; $('status').textContent = '無法開始：' + await res.text(); $('go').disabled = false; return; }
-  clearTimeout(polling); poll(0);
-}
-$('go').onclick = startSync;
-$('refresh').onclick = () => { loadCourses(); loadDashboard(); };
 
 function markOffline(){ $('offline').classList.toggle('hide', navigator.onLine); }
 addEventListener('online', markOffline);
 addEventListener('offline', markOffline);
 markOffline();
 
-// Service Worker 需要安全來源（127.0.0.1 算，區網 IP 不算）；不支援就安靜略過
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 
-loadStatus(); loadCourses(); loadDashboard();
+renderDownloads([], 'idle');
+(async () => {
+  const s = await loadStatus();
+  if(s && s.authenticated){ loadCourses(); loadDashboard(); }
+})();
 </script>
-</body></html>
-"""
+</body>
+</html>
+'''

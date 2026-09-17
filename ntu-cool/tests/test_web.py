@@ -163,7 +163,7 @@ class TestAccessControl(WebTestCase):
         status, body, headers = self.get("/")
         self.assertEqual(status, 200)
         self.assertIn("text/html", headers["Content-Type"])
-        self.assertIn("NTU COOL 同步", body.decode("utf-8"))
+        self.assertIn("NTU Course Hub", body.decode("utf-8"))
 
     def test_wrong_key_is_rejected(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
@@ -403,6 +403,104 @@ class TestDashboard(WebTestCase):
         self.assertIn("HW1 複雜度證明", names)    # 三天後到期、已繳交
         self.assertTrue(next(i for i in data["upcoming"] if i["name"] == "HW0 環境設定")["overdue"])
         self.assertEqual(next(g for g in data["grades"] if g["course"] == "CSIE1212")["score"], 92.5)
+
+
+class TestCourseEndpoints(WebTestCase):
+    """課程分頁與課程內頁的資料。"""
+
+    def test_courses_list_after_a_sync(self):
+        self.sync_and_wait()
+        _, body, _ = self.get("/api/courses")
+        courses = json.loads(body)["courses"]
+        self.assertEqual({c["code"] for c in courses}, {"CSIE1212", "PHYS1001"})
+        csie = next(c for c in courses if c["code"] == "CSIE1212")
+        self.assertEqual(csie["teacher"], "王教授")
+        self.assertEqual(csie["term"], "113-2")
+        self.assertEqual(csie["score"], 92.5)
+        self.assertEqual(csie["files"], 4)          # 只算 files/ 底下真正下載的
+        self.assertTrue(csie["size"].endswith("B"))
+        self.assertEqual(csie["assignments"], 2)
+
+    def test_course_detail_lists_files_and_assignments(self):
+        self.sync_and_wait()
+        dirname = next(c["dir"] for c in json.loads(self.get("/api/courses")[1])["courses"]
+                       if c["code"] == "CSIE1212")
+        _, body, _ = self.get(f"/api/course?dir={urllib.request.quote(dirname)}")
+        detail = json.loads(body)
+        self.assertEqual(detail["name"], "資料結構與演算法")
+        names = [f["name"] for f in detail["files"]]
+        self.assertIn("week1-投影片.pdf", names)
+        self.assertIn("course.md", names)
+        pdf = next(f for f in detail["files"] if f["name"] == "week1-投影片.pdf")
+        self.assertEqual(pdf["ext"], "PDF")
+        self.assertTrue(pdf["path"].startswith(dirname))
+        self.assertEqual([a["name"] for a in detail["assignments"]][0], "HW1 複雜度證明")
+
+    def test_course_detail_cannot_escape_the_output_folder(self):
+        for attempt in ("..", "../..", "/etc"):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self.get(f"/api/course?dir={urllib.request.quote(attempt)}")
+            self.assertEqual(caught.exception.code, 404, attempt)
+
+    def test_course_detail_unknown_name(self):
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.get("/api/course?dir=nope")
+        self.assertEqual(caught.exception.code, 404)
+
+    def test_status_reports_storage(self):
+        self.sync_and_wait()
+        data = json.loads(self.get("/api/status")[1])
+        self.assertGreater(data["files"], 0)
+        self.assertGreater(data["bytes"], 0)
+        self.assertEqual(data["term"], "113-2")
+        self.assertFalse(data["syncing"])
+
+
+class TestProgressAggregation(WebTestCase):
+    """每門課的進度條：由 Scraper 丟出的事件累積而成。"""
+
+    def job(self):
+        from ntucool.web import SyncJob
+
+        return SyncJob()
+
+    def test_percent_tracks_downloaded_files(self):
+        job = self.job()
+        job.handle({"type": "course_start", "course": "A"})
+        self.assertEqual(job.snapshot(0)["courses"][0]["state"], "running")
+        job.handle({"type": "downloads_planned", "course": "A", "total": 4})
+        job.handle({"type": "file_done", "course": "A", "done": 1, "total": 4})
+        self.assertEqual(job.snapshot(0)["courses"][0]["percent"], 25)
+        job.handle({"type": "course_done", "course": "A", "downloaded": 4, "skipped": 1})
+        done = job.snapshot(0)["courses"][0]
+        self.assertEqual((done["percent"], done["state"], done["skipped"]), (100, "done", 1))
+
+    def test_course_with_nothing_to_download_still_completes(self):
+        job = self.job()
+        job.handle({"type": "course_start", "course": "B"})
+        job.handle({"type": "course_done", "course": "B", "downloaded": 0})
+        self.assertEqual(job.snapshot(0)["courses"][0]["percent"], 100)
+
+    def test_failures_are_visible(self):
+        job = self.job()
+        job.handle({"type": "course_start", "course": "C"})
+        job.handle({"type": "course_failed", "course": "C", "error": "403"})
+        entry = job.snapshot(0)["courses"][0]
+        self.assertEqual(entry["state"], "failed")
+        self.assertEqual(entry["error"], "403")
+
+    def test_order_is_preserved(self):
+        job = self.job()
+        for name in ("第一門", "第二門", "第三門"):
+            job.handle({"type": "course_start", "course": name})
+        self.assertEqual([c["course"] for c in job.snapshot(0)["courses"]], ["第一門", "第二門", "第三門"])
+
+    def test_real_sync_reports_every_course(self):
+        self.sync_and_wait()
+        _, body, _ = self.get("/api/progress?from=0")
+        courses = json.loads(body)["courses"]
+        self.assertEqual(len(courses), 2)
+        self.assertTrue(all(c["state"] == "done" and c["percent"] == 100 for c in courses))
 
 
 class TestOptionMapping(WebTestCase):

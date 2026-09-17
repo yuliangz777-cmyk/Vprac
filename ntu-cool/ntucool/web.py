@@ -74,15 +74,54 @@ class SyncJob:
     def __init__(self):
         self.lines: list[str] = []
         self.status = "idle"  # idle / running / done / error
+        self.courses: dict[str, dict] = {}   # 課程 → 進度
+        self.order: list[str] = []           # 保持課程出現的順序
         self.lock = threading.Lock()
 
     def log(self, message=""):
         with self.lock:
             self.lines.append(str(message))
 
+    def handle(self, event: dict) -> None:
+        """把 Scraper 丟出來的事件變成畫面上的進度條。"""
+        name = event.get("course") or ""
+        if not name:
+            return
+        with self.lock:
+            if name not in self.courses:
+                self.courses[name] = {"course": name, "done": 0, "total": 0, "state": "waiting"}
+                self.order.append(name)
+            entry = self.courses[name]
+            kind = event.get("type")
+            if kind == "course_start":
+                entry["state"] = "running"
+            elif kind == "downloads_planned":
+                entry["total"] = event.get("total") or 0
+            elif kind == "file_done":
+                entry["done"] = event.get("done") or entry["done"]
+                entry["total"] = event.get("total") or entry["total"]
+            elif kind == "course_done":
+                entry["state"] = "done"
+                entry["done"] = event.get("downloaded", entry["done"])
+                entry["total"] = entry["total"] or entry["done"]
+                entry["skipped"] = event.get("skipped", 0)
+            elif kind == "course_failed":
+                entry["state"] = "failed"
+                entry["error"] = event.get("error", "")
+
     def snapshot(self, start: int) -> dict:
         with self.lock:
-            return {"status": self.status, "lines": self.lines[start:]}
+            courses = []
+            for name in self.order:
+                entry = dict(self.courses[name])
+                total = entry.get("total") or 0
+                done = entry.get("done") or 0
+                if entry["state"] == "done":
+                    entry["percent"] = 100
+                else:
+                    entry["percent"] = int(done * 100 / total) if total else (5 if entry["state"] == "running" else 0)
+                courses.append(entry)
+            return {"status": self.status, "lines": self.lines[start:], "courses": courses}
 
     @property
     def running(self) -> bool:
@@ -109,12 +148,104 @@ class WebApp:
                 token_ok = False  # 權杖過期 → 回到登入畫面
             except NtuCoolError:
                 token_ok = True  # 只是連不上，不必要求重新登入
+        stored = self.storage()
         return {
             "authenticated": token_ok,
             "user": user,
             "base_url": self.config.base_url,
             "out_dir": str(Path(self.config.out_dir).resolve()),
             "last_sync": local_time(manifest.last_sync),
+            "files": stored["files"],
+            "bytes": stored["bytes"],
+            "size": human_size(stored["bytes"]),
+            "term": stored["term"],
+            "syncing": self.job.running,
+        }
+
+    def storage(self) -> dict:
+        """已經抓下來的東西佔多少空間。"""
+        out = Path(self.config.out_dir)
+        files = total = 0
+        term = ""
+        if out.is_dir():
+            for item in out.rglob("*"):
+                if item.is_file() and not item.name.startswith("."):
+                    files += 1
+                    total += item.stat().st_size
+            for course in self.courses():
+                if course.get("term"):
+                    term = course["term"]
+                    break
+        return {"files": files, "bytes": total, "term": term}
+
+    def courses(self) -> list[dict]:
+        """課程清單：名稱、課號、教師、檔案數與容量，全部來自已抓下來的資料。"""
+        out = Path(self.config.out_dir)
+        result = []
+        if not out.is_dir():
+            return result
+        for course_dir in sorted(p for p in out.iterdir() if p.is_dir()):
+            source = course_dir / "course.json"
+            if not source.is_file():
+                continue
+            try:
+                data = json.loads(source.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            course = data.get("course") or {}
+            files_dir = course_dir / "files"
+            downloaded = [f for f in files_dir.rglob("*") if f.is_file()] if files_dir.is_dir() else []
+            result.append(
+                {
+                    "dir": course_dir.name,
+                    "id": course.get("id"),
+                    "name": course.get("name") or course_dir.name,
+                    "code": course.get("course_code") or "",
+                    "teacher": "、".join(course.get("teachers") or []),
+                    "term": course.get("term") or "",
+                    "score": course.get("score"),
+                    "grade": course.get("grade"),
+                    "files": len(downloaded),
+                    "bytes": sum(f.stat().st_size for f in downloaded),
+                    "size": human_size(sum(f.stat().st_size for f in downloaded)),
+                    "assignments": len(data.get("assignments") or []),
+                    "announcements": len(data.get("announcements") or []),
+                }
+            )
+        return result
+
+    def course_detail(self, dirname: str) -> dict | None:
+        """單一課程：檔案清單與作業，給課程內頁用。"""
+        out = Path(self.config.out_dir).resolve()
+        course_dir = (out / dirname).resolve()
+        if course_dir.parent != out or not course_dir.is_dir():
+            return None
+        try:
+            data = json.loads((course_dir / "course.json").read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        files = []
+        for item in sorted(course_dir.rglob("*")):
+            if item.is_file() and not item.name.startswith("."):
+                files.append(
+                    {
+                        "name": item.name,
+                        "folder": str(item.parent.relative_to(course_dir)),
+                        "path": str(item.relative_to(out)),
+                        "ext": (item.suffix.lstrip(".") or "file").upper()[:4],
+                        "size": human_size(item.stat().st_size),
+                    }
+                )
+        course = data.get("course") or {}
+        return {
+            "dir": dirname,
+            "name": course.get("name"),
+            "code": course.get("course_code") or "",
+            "teacher": "、".join(course.get("teachers") or []),
+            "term": course.get("term") or "",
+            "url": course.get("url") or "",
+            "files": files,
+            "assignments": data.get("assignments") or [],
         }
 
     def files(self) -> dict:
@@ -263,6 +394,7 @@ class WebApp:
                                  max_retries=config.max_retries, per_page=config.per_page),
                     Manifest.load(config.out_dir),
                     log=job.log,
+                    on_event=job.handle,
                 )
                 result = scraper.run()
                 job.log("")
@@ -360,6 +492,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
         if path == "/api/status":
             return self._json(self.app.status())
+        if path == "/api/courses":
+            return self._json({"courses": self.app.courses()})
+        if path == "/api/course":
+            name = (query.get("dir") or [""])[0]
+            detail = self.app.course_detail(name)
+            return self._json(detail) if detail else self._text(404, "找不到這門課程")
         if path == "/api/dashboard":
             return self._json(self.app.dashboard())
         if path == "/api/files":

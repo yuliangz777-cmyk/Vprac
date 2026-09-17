@@ -77,12 +77,15 @@ def _clean_folder_path(full_name: str | None) -> str:
 
 
 class Scraper:
-    def __init__(self, config: Config, client: CanvasClient, manifest: Manifest | None = None, log=None):
+    def __init__(self, config: Config, client: CanvasClient, manifest: Manifest | None = None,
+                 log=None, on_event=None):
         self.config = config
         self.client = client
         self.out_dir = Path(config.out_dir)
         self.manifest = manifest or Manifest.load(self.out_dir)
         self.log = log or (lambda *_: None)
+        # 結構化進度事件；網頁介面用它畫每一門課的進度條
+        self.on_event = on_event or (lambda _event: None)
 
     # ---- 課程清單 --------------------------------------------------------
     def list_courses(self) -> list[dict]:
@@ -124,11 +127,19 @@ class Scraper:
         for index, course in enumerate(courses, 1):
             label = f"{course.get('course_code') or ''} {course.get('name')}".strip()
             self.log(f"[{index}/{len(courses)}] {label}")
+            self.on_event({"type": "course_start", "index": index, "total": len(courses),
+                           "course": label, "id": course.get("id")})
             try:
-                results.append(self.sync_course(course))
+                result = self.sync_course(course)
+                results.append(result)
+                self.on_event({"type": "course_done", "course": label, "id": course.get("id"),
+                               "downloaded": result.downloaded, "skipped": result.skipped,
+                               "files": result.files_total})
             except ApiError as exc:
                 self.log(f"  ! 課程擷取失敗：{exc}")
                 results.append(CourseResult(course=course, dirname=course_dirname(course), failures=[str(exc)]))
+                self.on_event({"type": "course_failed", "course": label, "id": course.get("id"),
+                               "error": str(exc)})
         if not self.config.dry_run:
             self.out_dir.mkdir(parents=True, exist_ok=True)
             (self.out_dir / "README.md").write_text(
@@ -379,6 +390,9 @@ class Scraper:
             result.downloaded = len(jobs)
             return
 
+        label = f"{result.course.get('course_code') or ''} {result.course.get('name')}".strip()
+        self.on_event({"type": "downloads_planned", "course": label, "id": cid, "total": len(jobs)})
+
         def worker(job):
             item, dest = job
             written = self.client.download(item["url"], dest, expected_size=item.get("size") or None)
@@ -396,6 +410,9 @@ class Scraper:
                 result.downloaded += 1
                 result.bytes += written
                 self.log(f"  ↓ {dest.relative_to(self.out_dir)}")
+                self.on_event({"type": "file_done", "course": label, "id": cid,
+                               "done": result.downloaded, "total": len(jobs),
+                               "name": item.get("name"), "bytes": written})
 
 
 def _safe(fn):

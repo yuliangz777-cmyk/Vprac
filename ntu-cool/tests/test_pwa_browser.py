@@ -75,21 +75,45 @@ class TestInstallableAndOffline(unittest.TestCase):
             )
 
             page.click("#go")
-            page.wait_for_selector(".status.done", timeout=60000)
+            page.wait_for_selector("#statusLine.done", timeout=60000)
 
             page.reload(wait_until="networkidle")
             self.assertTrue(page.evaluate("navigator.serviceWorker.controller !== null"),
                             "Service Worker 應該已經接管頁面")
-            page.wait_for_selector("#upcoming .rows li", timeout=10000)
-            online_rows = page.locator("#upcoming .rows li").count()
+            page.wait_for_selector("#upcoming .row", timeout=10000)
+            online_rows = page.locator("#upcoming .row").count()
             self.assertGreater(online_rows, 0)
 
             # 拔掉網路：介面與上次的資料都該還在
             context.set_offline(True)
             page.reload(wait_until="domcontentloaded")
-            page.wait_for_selector("#upcoming .rows li", timeout=10000)
-            self.assertEqual(page.locator("#upcoming .rows li").count(), online_rows)
+            page.wait_for_selector("#upcoming .row", timeout=10000)
+            self.assertEqual(page.locator("#upcoming .row").count(), online_rows)
             self.assertTrue(page.is_visible("#offline"), "離線時要看得到提示")
+            self.assertEqual(errors, [])
+
+    def test_tabs_and_course_detail_work(self):
+        with self.browser() as browser:
+            page = browser.new_page(viewport={"width": 390, "height": 844})
+            errors = []
+            page.on("pageerror", lambda exc: errors.append(str(exc)))
+            page.goto(self.url, wait_until="networkidle")
+
+            page.click("#go")                       # 首頁的「同步新文件」
+            page.wait_for_selector("#statusLine.done", timeout=60000)
+            self.assertEqual(page.locator(".download-item").count(), 2)
+
+            page.click("[data-target=courses]")
+            page.wait_for_selector(".course-card", timeout=10000)
+            self.assertEqual(page.locator(".course-card").count(), 2)
+
+            page.click(".course-card")
+            page.wait_for_selector(".file-row", timeout=10000)
+            self.assertGreater(page.locator(".file-row").count(), 3)
+            self.assertIn("資料結構與演算法", page.inner_text("#courseDetail"))
+
+            page.click("[data-target=settings]")
+            self.assertIn("已連結", page.inner_text("#settingsState"))
             self.assertEqual(errors, [])
 
     def test_manifest_link_carries_the_key_so_the_installed_app_can_get_in(self):

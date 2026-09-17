@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-THEME_COLOR = "#0b62d6"
+THEME_COLOR = "#f7f7f9"
 BACKGROUND_COLOR = "#f6f6f7"
 
 
@@ -19,8 +19,8 @@ def manifest(key: str) -> str:
     """start_url 帶著存取金鑰，從主畫面點開才不會又被擋在門外。"""
     return json.dumps(
         {
-            "name": "NTU COOL 同步",
-            "short_name": "NTU COOL",
+            "name": "NTU Course Hub",
+            "short_name": "Course Hub",
             "description": "自動擷取 NTU COOL 課程檔案、作業截止日與成績",
             "lang": "zh-Hant",
             "start_url": f"/?k={key}",
