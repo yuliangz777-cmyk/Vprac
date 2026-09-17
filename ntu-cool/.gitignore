@@ -7,6 +7,7 @@ ntucool.config.json
 ntu-cool-data/
 *.part
 .ntucool-state.json
+.ntucool-token
 
 __pycache__/
 *.pyc

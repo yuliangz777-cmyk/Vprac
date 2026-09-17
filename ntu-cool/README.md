@@ -139,6 +139,69 @@ crontab -e
 
 ---
 
+## 五之二、在 iPhone 上一鍵同步
+
+整個工具只用 Python 標準函式庫，所以 iPhone 上用 **a-Shell**（App Store 免費、內建 Python 3.11）就能跑，
+再用**捷徑**做成主畫面上的一個圖示，點一下就同步完。
+
+### 1. 裝 a-Shell
+
+App Store 搜尋 **a-Shell**（作者 Nicolas Holzschuch）安裝，打開它。
+
+### 2. 下載並安裝
+
+在 a-Shell 裡依序貼上這三行（可以直接整段複製貼上）：
+
+```bash
+curl -sL https://codeload.github.com/yuliangz777-cmyk/Vprac/tar.gz/refs/heads/claude/ntu-cool-auto-scraper-9i7paw -o ntucool.tgz
+tar xzf ntucool.tgz
+python3 Vprac-claude-ntu-cool-auto-scraper-9i7paw/ntu-cool/mobile/ios_setup.py --archive ntucool.tgz
+```
+
+它會把程式碼裝到 `~/Documents/ntucool`、問你要貼上的**存取權杖**（輸入時不會顯示）、
+立刻打一次 API 確認權杖有效，然後把要貼進捷徑的那一行指令印出來。
+
+> 這段合併進 `main` 之後，把上面兩處的
+> `refs/heads/claude/ntu-cool-auto-scraper-9i7paw` 換成 `refs/heads/main`、
+> 資料夾名換成 `Vprac-main` 即可。
+>
+> 權杖存在 `~/Documents/ntucool/.ntucool-token`，權限設為只有你自己讀得到，待在 a-Shell 的沙箱內。
+> 之後想換權杖或更新程式碼，重跑一次 `python3 ~/Documents/ntucool/ios_setup.py`
+> （不加 `--archive` 就會自己去抓最新版）。
+
+### 3. 做成一鍵捷徑
+
+1. 打開**捷徑** App → 右上角 **+** → **新增動作**
+2. 搜尋 `a-Shell`，選 **Execute Command**
+3. 指令欄位貼上安裝腳本印給你的那一行：
+   ```
+   python3 ~/Documents/ntucool/ios_sync.py
+   ```
+4. 命名為「同步 NTU COOL」→ 完成
+5. 長按捷徑 → **加入主畫面** → 從此就像一個 App
+
+### 4.（選用）每天自動跑
+
+捷徑 App → **自動化** → **新增** → **特定時間** → 選時間 → 執行剛才的捷徑，
+並**關掉「執行前先詢問」**。iOS 會在該時間自動叫醒 a-Shell 同步。
+
+### 抓完的檔案在哪裡
+
+「**檔案**」App → **我的 iPhone** → **a-Shell** → **NTUCool** → 每門課一個資料夾。
+PDF 直接點開就能看，也可以長按分享到 GoodNotes、Notability 或存到 iCloud。
+
+### iPhone 上的注意事項
+
+- **同步時讓 a-Shell 保持在前景**。iOS 會凍結背景 App，切出去可能讓同步中斷；
+  中斷也不會壞掉——下次再點一次，已抓好的檔案會直接跳過，只補沒抓完的。
+- 第一次同步會抓全部，建議**連 Wi-Fi**。之後每次都只抓新的／更新過的，通常幾秒就結束。
+- 想省流量與空間：捷徑指令後面可以加參數，例如
+  `python3 ~/Documents/ntucool/ios_sync.py --ext pdf --max-file-mb 30`
+- `--watch` 常駐模式在 iOS 上沒有意義（App 一被凍結就停），請改用上面的「自動化」。
+- 預設輸出位置可以用環境變數 `NTU_COOL_OUT` 換掉。
+
+---
+
 ## 六、疑難排解
 
 | 訊息 | 原因與處理 |

@@ -163,8 +163,17 @@ def load_config(
                 return file_data[key]
         return default
 
+    token = str(pick("NTU_COOL_TOKEN", "CANVAS_TOKEN", default="") or "").strip()
+    token_file = pick("NTU_COOL_TOKEN_FILE")
+    if not token and token_file:
+        # 讓權杖可以只存在一個檔案裡（手機、cron、systemd 都用得上）
+        try:
+            token = Path(token_file).expanduser().read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise ConfigError(f"讀不到權杖檔 {token_file}：{exc}") from exc
+
     cfg = Config(
-        token=str(pick("NTU_COOL_TOKEN", "CANVAS_TOKEN", default="") or "").strip(),
+        token=token,
         base_url=str(pick("NTU_COOL_BASE_URL", default=DEFAULT_BASE_URL)).strip(),
         out_dir=Path(str(pick("NTU_COOL_OUT", default="ntu-cool-data"))),
         enrollment_state=str(pick("NTU_COOL_ENROLLMENT_STATE", default="active")),

@@ -77,6 +77,33 @@ class TestConfig(unittest.TestCase):
             self.assertEqual(cfg.out_dir, Path("from-cli"))
             self.assertEqual(cfg.sections, ALL_SECTIONS)
 
+    def test_token_can_come_from_a_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            token_file = Path(tmp) / "token"
+            token_file.write_text("  file-token\n", encoding="utf-8")
+            cfg = load_config(
+                environ={"NTU_COOL_TOKEN_FILE": str(token_file)},
+                config_candidates=(), env_candidates=(),
+            )
+            self.assertEqual(cfg.token, "file-token")
+
+    def test_token_file_wins_only_when_token_is_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            token_file = Path(tmp) / "token"
+            token_file.write_text("file-token", encoding="utf-8")
+            cfg = load_config(
+                environ={"NTU_COOL_TOKEN": "env-token", "NTU_COOL_TOKEN_FILE": str(token_file)},
+                config_candidates=(), env_candidates=(),
+            )
+            self.assertEqual(cfg.token, "env-token")
+
+    def test_missing_token_file_is_a_config_error(self):
+        with self.assertRaises(ConfigError):
+            load_config(
+                environ={"NTU_COOL_TOKEN_FILE": "/nope/does-not-exist"},
+                config_candidates=(), env_candidates=(),
+            )
+
     def test_validate_requires_token(self):
         cfg = load_config(environ={}, config_candidates=(), env_candidates=())
         with self.assertRaises(ConfigError):

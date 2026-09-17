@@ -216,17 +216,18 @@ def _run_once(config: Config, as_json: bool) -> int:
             indent=2,
         ))
     elif not config.quiet:
+        # 沒取得的項目先講，摘要放最後 —— 小螢幕上最後一行最容易看到
+        if run.failures:
+            print(f"\n有 {len(run.failures)} 個項目沒取得：")
+            for message in run.failures[:10]:
+                print(f"  - {message}")
+            if len(run.failures) > 10:
+                print(f"  …另外還有 {len(run.failures) - 10} 項，詳見 {run.out_dir}/README.md")
         print(
             f"\n完成：{len(run.results)} 門課程，新增／更新 {run.downloaded} 個檔案"
             f"（{human_size(run.bytes)}），共 {run.requests} 次 API 呼叫"
         )
         print(f"輸出位置：{run.out_dir.resolve()}")
-        if run.failures:
-            print(f"有 {len(run.failures)} 個項目沒取得：")
-            for message in run.failures[:10]:
-                print(f"  - {message}")
-            if len(run.failures) > 10:
-                print(f"  …另外還有 {len(run.failures) - 10} 項，詳見 {run.out_dir}/README.md")
     return 0
 
 
