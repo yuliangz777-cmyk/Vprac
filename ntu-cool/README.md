@@ -169,7 +169,17 @@ python3 Vprac-claude-ntu-cool-auto-scraper-9i7paw/ntu-cool/mobile/ios_setup.py -
 > 之後想換權杖或更新程式碼，重跑一次 `python3 ~/Documents/ntucool/ios_setup.py`
 > （不加 `--archive` 就會自己去抓最新版）。
 
-### 3. 做成一鍵捷徑
+### 3. 先手動跑一次
+
+做捷徑之前，先在 a-Shell 直接執行安裝腳本印給你的那一行，確認一切正常：
+
+```bash
+python3 ~/Documents/ntucool/ios_sync.py
+```
+
+看到「完成：N 門課程…」就代表成功了，捷徑只是把這一行包起來而已。
+
+### 4. 做成一鍵捷徑
 
 1. 打開**捷徑** App → 右上角 **+** → **新增動作**
 2. 搜尋 `a-Shell`，選 **Execute Command**
@@ -180,7 +190,11 @@ python3 Vprac-claude-ntu-cool-auto-scraper-9i7paw/ntu-cool/mobile/ios_setup.py -
 4. 命名為「同步 NTU COOL」→ 完成
 5. 長按捷徑 → **加入主畫面** → 從此就像一個 App
 
-### 4.（選用）每天自動跑
+> 如果捷徑裡找不到 a-Shell 的動作，備案是用「**打開 URL**」動作，網址填
+> `ashell://python3%20~/Documents/ntucool/ios_sync.py`。
+> 這個備案我沒辦法在這裡實測，沒反應的話請用上面的 Execute Command 方式。
+
+### 5.（選用）每天自動跑
 
 捷徑 App → **自動化** → **新增** → **特定時間** → 選時間 → 執行剛才的捷徑，
 並**關掉「執行前先詢問」**。iOS 會在該時間自動叫醒 a-Shell 同步。
