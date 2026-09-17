@@ -21,7 +21,7 @@ import urllib.request
 from pathlib import Path
 
 DEFAULT_REPO = "yuliangz777-cmyk/Vprac"
-DEFAULT_REF = "claude/ntu-cool-auto-scraper-9i7paw"
+DEFAULT_REF = "main"
 DEFAULT_DIR = Path.home() / "Documents" / "ntucool"
 TOKEN_FILENAME = ".ntucool-token"
 
@@ -138,7 +138,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="在 iPhone（a-Shell）上安裝 ntucool")
     parser.add_argument("--dir", type=Path, default=DEFAULT_DIR, help="安裝位置")
     parser.add_argument("--repo", default=DEFAULT_REPO)
-    parser.add_argument("--ref", default=DEFAULT_REF, help="分支或標籤（合併到 main 之後改成 main）")
+    parser.add_argument("--ref", default=DEFAULT_REF, help="分支或標籤，預設 main")
     parser.add_argument("--archive", type=Path, help="改用本機的 .tar.gz 安裝（離線或測試用）")
     parser.add_argument("--token", help="直接指定權杖，不互動詢問")
     parser.add_argument("--skip-verify", action="store_true")

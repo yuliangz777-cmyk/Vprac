@@ -153,18 +153,14 @@ App Store 搜尋 **a-Shell**（作者 Nicolas Holzschuch）安裝，打開它。
 在 a-Shell 裡依序貼上這三行（可以直接整段複製貼上）：
 
 ```bash
-curl -sL https://codeload.github.com/yuliangz777-cmyk/Vprac/tar.gz/refs/heads/claude/ntu-cool-auto-scraper-9i7paw -o ntucool.tgz
+curl -sL https://codeload.github.com/yuliangz777-cmyk/Vprac/tar.gz/refs/heads/main -o ntucool.tgz
 tar xzf ntucool.tgz
-python3 Vprac-claude-ntu-cool-auto-scraper-9i7paw/ntu-cool/mobile/ios_setup.py --archive ntucool.tgz
+python3 Vprac-main/ntu-cool/mobile/ios_setup.py --archive ntucool.tgz
 ```
 
 它會把程式碼裝到 `~/Documents/ntucool`、問你要貼上的**存取權杖**（輸入時不會顯示）、
 立刻打一次 API 確認權杖有效，然後把要貼進捷徑的那一行指令印出來。
 
-> 這段合併進 `main` 之後，把上面兩處的
-> `refs/heads/claude/ntu-cool-auto-scraper-9i7paw` 換成 `refs/heads/main`、
-> 資料夾名換成 `Vprac-main` 即可。
->
 > 權杖存在 `~/Documents/ntucool/.ntucool-token`，權限設為只有你自己讀得到，待在 a-Shell 的沙箱內。
 > 之後想換權杖或更新程式碼，重跑一次 `python3 ~/Documents/ntucool/ios_setup.py`
 > （不加 `--archive` 就會自己去抓最新版）。

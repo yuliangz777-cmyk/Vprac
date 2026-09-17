@@ -32,7 +32,7 @@ def build_repo_tarball(path: Path) -> Path:
     """做一個跟 GitHub 下載下來一模一樣結構的壓縮檔。"""
     archive = path / "repo.tar.gz"
     with tarfile.open(archive, "w:gz") as tar:
-        prefix = "Vprac-claude-ntu-cool-auto-scraper-9i7paw/ntu-cool"
+        prefix = "Vprac-main/ntu-cool"
         for source in sorted((ROOT / "ntucool").glob("*.py")):
             tar.add(source, arcname=f"{prefix}/ntucool/{source.name}")
         for name in ("ios_sync.py", "ios_setup.py"):
@@ -58,8 +58,18 @@ class TestPathMapping(unittest.TestCase):
         self.assertIsNone(self.setup.target_for("Vprac-branch/ntu-cool/../../etc/passwd"))
 
     def test_archive_url(self):
-        url = self.setup.archive_url("owner/repo", "feature/x")
-        self.assertEqual(url, "https://codeload.github.com/owner/repo/tar.gz/refs/heads/feature/x")
+        self.assertEqual(
+            self.setup.archive_url("owner/repo", "main"),
+            "https://codeload.github.com/owner/repo/tar.gz/refs/heads/main",
+        )
+        # 分支名含斜線時也要組得出正確網址
+        self.assertEqual(
+            self.setup.archive_url("owner/repo", "feature/x"),
+            "https://codeload.github.com/owner/repo/tar.gz/refs/heads/feature/x",
+        )
+
+    def test_default_ref_is_main(self):
+        self.assertEqual(self.setup.DEFAULT_REF, "main")
 
 
 class TestInstall(unittest.TestCase):
