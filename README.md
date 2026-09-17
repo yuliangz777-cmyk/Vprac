@@ -146,3 +146,17 @@ npm run icons     # 重新產生 icon
 - iOS 的靜音實體開關會讓 Web Audio 沒聲音，節拍器沒聲音時請先確認側邊開關。
 - 錄音格式在 iOS 是 `audio/mp4`，其他瀏覽器多為 `webm`；檔案只在本機播放，不需轉檔。
 - 網頁版無法傳送系統推播通知，練習提醒請用 iOS「捷徑／提醒事項」自行設定。
+
+---
+
+## 七、同一個 repo 裡的另一個專案：`ntu-cool/`
+
+`ntu-cool/` 是獨立的命令列工具，跟這個 PWA 沒有任何相依關係：
+自動把 **NTU COOL** 的課程檔案、公告、作業截止日與課程資訊抓回本機並整理好，支援增量同步與排程自動執行。
+用法見 [`ntu-cool/README.md`](ntu-cool/README.md)。
+
+```bash
+cd ntu-cool
+export NTU_COOL_TOKEN='你的存取權杖'
+python3 -m ntucool sync
+```
