@@ -26,7 +26,7 @@ DEFAULT_DIR = Path.home() / "Documents" / "ntucool"
 TOKEN_FILENAME = ".ntucool-token"
 
 #: 只取這些檔案，其他（測試、README、workflow）手機上用不到
-WANTED_TOP_LEVEL = {"ios_sync.py", "ios_setup.py"}
+WANTED_TOP_LEVEL = {"ios_sync.py", "ios_web.py", "ios_setup.py"}
 
 
 def archive_url(repo: str, ref: str) -> str:
@@ -132,6 +132,10 @@ def print_shortcut_instructions(dest: Path) -> None:
     print("「特定時間」→ 選時間 → 執行這個捷徑（記得關掉「執行前先詢問」）")
     print("=" * 46)
     print("\n也可以直接在 a-Shell 手動執行同一行指令。")
+    print()
+    print("想要圖形介面（看作業截止日、成績、直接開檔案）：")
+    print(f"    python3 {dest / 'ios_web.py'}")
+    print("再切到 Safari 打開它印出來的網址，按「分享 → 加入主畫面」。")
 
 
 def main(argv=None) -> int:

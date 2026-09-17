@@ -103,8 +103,8 @@ def parse_env_file(text: str) -> dict[str, str]:
     return out
 
 
-def _load_env_files(candidates=ENV_CANDIDATES) -> dict[str, str]:
-    for path in candidates:
+def _load_env_files(candidates=None) -> dict[str, str]:
+    for path in ENV_CANDIDATES if candidates is None else candidates:
         try:
             if path.is_file():
                 return parse_env_file(path.read_text(encoding="utf-8"))
@@ -113,8 +113,8 @@ def _load_env_files(candidates=ENV_CANDIDATES) -> dict[str, str]:
     return {}
 
 
-def _load_config_file(path: Path | None, candidates=CONFIG_CANDIDATES) -> tuple[dict, str]:
-    paths = [path] if path else list(candidates)
+def _load_config_file(path: Path | None, candidates=None) -> tuple[dict, str]:
+    paths = [path] if path else list(CONFIG_CANDIDATES if candidates is None else candidates)
     for candidate in paths:
         if candidate and candidate.is_file():
             try:
@@ -145,8 +145,8 @@ def load_config(
     config_path: Path | None = None,
     environ: dict[str, str] | None = None,
     overrides: dict | None = None,
-    config_candidates=CONFIG_CANDIDATES,
-    env_candidates=ENV_CANDIDATES,
+    config_candidates=None,
+    env_candidates=None,
 ) -> Config:
     """組出最終設定。`overrides` 是 CLI 傳進來的值（None 代表沒指定）。"""
     environ = dict(os.environ if environ is None else environ)

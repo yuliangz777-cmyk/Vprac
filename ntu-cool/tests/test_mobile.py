@@ -35,7 +35,7 @@ def build_repo_tarball(path: Path) -> Path:
         prefix = "Vprac-main/ntu-cool"
         for source in sorted((ROOT / "ntucool").glob("*.py")):
             tar.add(source, arcname=f"{prefix}/ntucool/{source.name}")
-        for name in ("ios_sync.py", "ios_setup.py"):
+        for name in ("ios_sync.py", "ios_web.py", "ios_setup.py"):
             tar.add(ROOT / "mobile" / name, arcname=f"{prefix}/mobile/{name}")
         tar.add(ROOT / "README.md", arcname=f"{prefix}/README.md")          # 不該被安裝
         tar.add(ROOT / "tests" / "test_units.py", arcname=f"{prefix}/tests/test_units.py")
@@ -50,6 +50,7 @@ class TestPathMapping(unittest.TestCase):
         base = "Vprac-branch/ntu-cool"
         self.assertEqual(self.setup.target_for(f"{base}/ntucool/cli.py"), "ntucool/cli.py")
         self.assertEqual(self.setup.target_for(f"{base}/mobile/ios_sync.py"), "ios_sync.py")
+        self.assertEqual(self.setup.target_for(f"{base}/mobile/ios_web.py"), "ios_web.py")
         self.assertIsNone(self.setup.target_for(f"{base}/README.md"))
         self.assertIsNone(self.setup.target_for(f"{base}/tests/test_units.py"))
         self.assertIsNone(self.setup.target_for("Vprac-branch/index.html"))
@@ -87,6 +88,7 @@ class TestInstall(unittest.TestCase):
         self.assertTrue((dest / "ntucool" / "cli.py").is_file())
         self.assertTrue((dest / "ntucool" / "mobile.py").is_file())
         self.assertTrue((dest / "ios_sync.py").is_file())
+        self.assertTrue((dest / "ios_web.py").is_file())
         self.assertFalse((dest / "README.md").exists())
         self.assertFalse((dest / "tests").exists())
 
@@ -164,6 +166,39 @@ class TestMobileEntryPoint(unittest.TestCase):
         downloaded = [p.suffix for p in self.out.rglob("files/**/*") if p.is_file()]
         self.assertEqual(downloaded, [".zip"])  # 報表照樣產生，但只下載 zip
 
+    def test_web_launcher_serves_the_interface_on_localhost(self):
+        """手機上的網頁介面：用 127.0.0.1，Safari 才會把它當安全來源。"""
+        import threading
+        import urllib.request
+
+        from ntucool.config import load_config
+        from ntucool.web import create_server
+
+        mobile.save_token(TOKEN, self.token_file)
+        with mock.patch.dict(os.environ, self.env()):
+            self.assertTrue(mobile.use_saved_token())
+            config = load_config(overrides={"out_dir": mobile.data_dir()})
+            httpd, url = create_server(config, host="127.0.0.1", port=0)
+        try:
+            threading.Thread(target=httpd.serve_forever, daemon=True).start()
+            self.assertTrue(url.startswith("http://127.0.0.1:"))
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                page = resp.read().decode("utf-8")
+            self.assertIn("NTU COOL 同步", page)
+            self.assertIn("apple-touch-icon", page)   # 加到主畫面要有 icon
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_token_from_the_web_login_also_counts(self):
+        """在網頁上登入（寫進 .env）之後，捷徑同步也要認得。"""
+        env_file = self.home / "user.env"
+        env_file.write_text(f"NTU_COOL_TOKEN={TOKEN}\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"NTU_COOL_BASE_URL": self.server.base_url}, clear=True), \
+             mock.patch("ntucool.mobile.token_path", return_value=self.home / "no-such-token"), \
+             mock.patch("ntucool.config.ENV_CANDIDATES", (env_file,)):
+            self.assertTrue(mobile.use_saved_token())
+
     def test_without_a_token_it_says_how_to_fix_it(self):
         out = io.StringIO()
         env = self.env()
@@ -173,6 +208,7 @@ class TestMobileEntryPoint(unittest.TestCase):
                 code = mobile.main([])
         self.assertEqual(code, 2)
         self.assertIn("ios_setup.py", out.getvalue())
+        self.assertIn("ios_web.py", out.getvalue())   # 兩條路都要講
 
     def test_data_dir_prefers_documents(self):
         documents = self.home / "Documents"
