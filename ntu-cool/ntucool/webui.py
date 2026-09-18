@@ -77,9 +77,11 @@ button,select,input{font:inherit}
 .course-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:14px}
 @media (max-width:380px){.course-grid{grid-template-columns:1fr}}
 .course-card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px;
+  font:inherit;
   min-height:150px;display:flex;flex-direction:column;justify-content:space-between;gap:12px;
   cursor:pointer;text-align:left;color:inherit}
 .course-card h3{margin:8px 0 3px;font-size:16px;overflow-wrap:anywhere}
+.course-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .course-dot{width:12px;height:12px;border-radius:50%;background:var(--accent);display:block}
 .download-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0}
 .download-summary>div{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px}
@@ -140,6 +142,19 @@ button,select,input{font:inherit}
   word-break:break-word;max-height:34vh;overflow:auto;margin-top:12px}
 .status{font-weight:700;margin-top:14px}
 .status.running{color:var(--accent)} .status.done{color:var(--ok)} .status.error{color:var(--err)}
+.file-row input[type=checkbox]{width:20px;height:20px;accent-color:var(--accent);flex:none}
+.iconbtn{border:0;background:var(--bar);color:var(--text);border-radius:11px;width:34px;height:34px;
+  font-size:15px;cursor:pointer;flex:none}
+.course-card .iconbtn{position:absolute;top:14px;right:14px}
+.course-card{position:relative}
+.actionbar{position:fixed;left:50%;transform:translateX(-50%);
+  bottom:calc(84px + env(safe-area-inset-bottom));z-index:11;width:min(700px,calc(100% - 28px));
+  background:var(--ink);color:var(--on-ink);border-radius:18px;padding:12px 16px;
+  display:flex;align-items:center;gap:12px;box-shadow:0 10px 35px #0004}
+.actionbar b{flex:1;font-size:.95rem}
+.actionbar button{border:0;border-radius:11px;padding:10px 14px;font-weight:700;cursor:pointer;
+  background:var(--on-ink);color:var(--ink)}
+.actionbar .ghost{background:transparent;color:var(--on-ink);text-decoration:underline;padding:10px 4px}
 .detail-head{margin:10px 0 18px}
 .detail-head h2{margin:4px 0}
 </style>
@@ -204,6 +219,10 @@ button,select,input{font:inherit}
 
     <section class="page" data-page="downloads">
       <div class="section-head"><h2>同步工作</h2><button class="compact" onclick="openBulkModal()">＋ 新增下載</button></div>
+      <div class="card"><div class="storage">
+        <div><b>打包全部課程</b><small>把已經抓下來的檔案壓成一個 zip 存到這台裝置</small></div>
+        <button class="secondary" id="zipAll" onclick="downloadAll()">⤓ 下載</button>
+      </div></div>
       <div class="download-summary">
         <div><strong id="dlRunning">0</strong><small>進行中</small></div>
         <div><strong id="dlFiles">0</strong><small>已完成檔案</small></div>
@@ -241,6 +260,12 @@ button,select,input{font:inherit}
     </section>
   </main>
 
+  <div class="actionbar hide" id="actionbar">
+    <b id="pickedLabel">已選 0 個</b>
+    <button class="ghost" onclick="clearPicks()">取消</button>
+    <button id="pickedGo" onclick="downloadPicked()">⤓ 下載</button>
+  </div>
+
   <nav class="tabbar hide" id="tabbar">
     <button class="tab active" data-target="home" onclick="go('home')"><span>⌂</span>首頁</button>
     <button class="tab" data-target="courses" onclick="go('courses')"><span>▤</span>課程</button>
@@ -271,6 +296,7 @@ const titles = {home:'首頁', courses:'課程', downloads:'下載', settings:'�
 let state = {authenticated:false, courses:[]};
 
 function go(name){
+  if(name !== 'detail' && document.getElementById('actionbar')) $('actionbar').classList.add('hide');
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.dataset.page === name));
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.target === name));
   $('pageTitle').textContent = titles[name] || '';
@@ -335,11 +361,15 @@ async function loadCourses(){
     state.courses = data.courses;
     $('courseCount').textContent = data.courses.length ? `${data.courses.length} 門` : '';
     $('courseGrid').innerHTML = data.courses.length
-      ? data.courses.map(c => `<button class="course-card" onclick="openCourse('${esc(c.dir)}')">
+      ? data.courses.map(c => `<article class="course-card" role="button" tabindex="0"
+          onclick="openCourse('${esc(c.dir)}')"
+          onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openCourse('${esc(c.dir)}')}">
+          <button class="iconbtn" title="下載整門課" aria-label="下載整門課"
+            onclick="event.stopPropagation();downloadCourse('${esc(c.dir)}')">⤓</button>
           <div><span class="course-dot"></span><h3>${esc(c.name)}</h3>
             <small>${esc(c.code)}${c.teacher ? ' · ' + esc(c.teacher) : ''}</small></div>
           <div><b>${c.files} 個文件</b><small>${esc(c.size)}${c.score != null ? ' · ' + esc(c.score) + ' 分' : ''}</small></div>
-        </button>`).join('')
+        </article>`).join('')
       : '<div class="card" style="grid-column:1/-1"><div class="empty"><b>還沒有課程</b><p>先回首頁按「同步新文件」。</p></div></div>';
     $('bulkCourses').innerHTML = data.courses.map(c =>
       `<label class="check-row"><input type="checkbox" value="${esc(c.code || c.name)}" onchange="updateEstimate()">
@@ -362,22 +392,71 @@ async function openCourse(dir){
     $('pageTitle').textContent = c.code || '課程';
     const files = c.files.filter(f => f.folder.startsWith('files'));
     const docs = c.files.filter(f => !f.folder.startsWith('files'));
-    const fileRow = f => `<div class="file-row"><span class="icon">${esc(f.ext)}</span>
+    const fileRow = f => `<div class="file-row">
+        <input type="checkbox" data-path="${esc(f.path)}" data-bytes="${f.bytes}" onchange="onPick()">
+        <span class="icon">${esc(f.ext)}</span>
         <div><a href="/files/${encodeURI(f.path)}?k=${encodeURIComponent(KEY)}" target="_blank" rel="noopener">${esc(f.name)}</a>
         <small>${folderLabel(f.folder)}${esc(f.size)}</small></div></div>`;
     $('courseDetail').innerHTML = `
       <div class="detail-head"><small>${esc(c.code)}${c.term ? ' · ' + esc(c.term) : ''}</small>
         <h2>${esc(c.name)}</h2><p class="muted">${esc(c.teacher)}</p>
-        ${c.url ? `<a class="link" href="${esc(c.url)}" target="_blank" rel="noopener">在 NTU COOL 開啟 ›</a>` : ''}</div>
+        ${c.url ? `<a class="link" href="${esc(c.url)}" target="_blank" rel="noopener">在 NTU COOL 開啟 ›</a>` : ''}
+        <button class="compact full" style="padding:14px;margin-top:16px"
+          onclick="downloadCourse('${esc(c.dir)}')">⤓ 一鍵下載整門課（${c.files.length} 個檔案）</button></div>
       ${c.assignments.length ? `<div class="section-head"><h3>作業</h3></div><div class="card">${
         c.assignments.map(a => `<div class="row"><div><b>${esc(a.name)}</b>
           <small>${a.due_at ? '截止 ' + esc(a.due_at.slice(0,10)) : '未設截止日'}</small></div>
           <span class="pill ${a.submitted ? '' : 'plain'}">${a.submitted ? '已繳交' : '未繳交'}</span></div>`).join('')}</div>` : ''}
-      <div class="section-head"><h3>課程文件</h3><span class="muted">${files.length} 個</span></div>
+      <div class="section-head"><h3>課程文件</h3>
+        ${files.length ? `<button class="link" onclick="toggleAll()">全選／取消</button>` : `<span class="muted">0 個</span>`}</div>
       <div class="card">${files.length ? files.map(fileRow).join('')
         : '<div class="empty"><b>沒有檔案</b><p>這門課可能關閉了檔案分頁。</p></div>'}</div>
       ${docs.length ? `<div class="section-head"><h3>整理好的資料</h3></div><div class="card">${docs.map(fileRow).join('')}</div>` : ''}`;
+    onPick();
   }catch(e){ $('courseDetail').innerHTML = '<p class="muted">讀取失敗：' + esc(e) + '</p>'; }
+}
+
+// ---- 打包下載 ----
+function humanSize(bytes){
+  const units = ['B','KB','MB','GB'];
+  let value = bytes, unit = 0;
+  while(value >= 1024 && unit < units.length - 1){ value /= 1024; unit++; }
+  return (unit === 0 ? value : value.toFixed(1)) + ' ' + units[unit];
+}
+function pickedBoxes(){ return [...document.querySelectorAll('#courseDetail input[type=checkbox]:checked')]; }
+function onPick(){
+  const picked = pickedBoxes();
+  const bar = $('actionbar');
+  if(!picked.length){ bar.classList.add('hide'); return; }
+  const bytes = picked.reduce((sum, box) => sum + Number(box.dataset.bytes || 0), 0);
+  bar.classList.remove('hide');
+  $('pickedLabel').textContent = `已選 ${picked.length} 個 · ${humanSize(bytes)}`;
+}
+function toggleAll(){
+  const boxes = [...document.querySelectorAll('#courseDetail input[type=checkbox]')];
+  const turnOn = boxes.some(b => !b.checked);
+  boxes.forEach(b => { b.checked = turnOn; });
+  onPick();
+}
+function clearPicks(){
+  document.querySelectorAll('#courseDetail input[type=checkbox]').forEach(b => { b.checked = false; });
+  onPick();
+}
+function startZip(query){ location.href = '/api/zip?' + query + '&k=' + encodeURIComponent(KEY); }
+function downloadCourse(dir){ startZip('dir=' + encodeURIComponent(dir)); }
+function downloadAll(){ startZip('all=1'); }
+async function downloadPicked(){
+  const picked = pickedBoxes();
+  if(!picked.length) return;
+  const button = $('pickedGo');
+  button.disabled = true;
+  try{
+    const res = await api('/api/zip-ticket', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({paths: picked.map(b => b.dataset.path), name: $('pageTitle').textContent + '-選取檔案'})});
+    if(!res.ok){ alert('無法建立下載：' + await res.text()); return; }
+    const data = await res.json();
+    startZip('ticket=' + encodeURIComponent(data.ticket));
+  }finally{ button.disabled = false; }
 }
 
 function openBulkModal(){ $('bulkModal').classList.add('show'); updateEstimate(); }

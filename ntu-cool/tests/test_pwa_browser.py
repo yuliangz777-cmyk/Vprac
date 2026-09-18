@@ -116,6 +116,58 @@ class TestInstallableAndOffline(unittest.TestCase):
             self.assertIn("已連結", page.inner_text("#settingsState"))
             self.assertEqual(errors, [])
 
+    def test_one_click_and_multi_select_downloads(self):
+        """把檔案打包送到裝置上：課程卡一鍵、內頁一鍵、勾選多個、打包全部。"""
+        import tempfile
+        import zipfile
+
+        with self.browser() as browser:
+            context = browser.new_context(viewport={"width": 390, "height": 844}, accept_downloads=True)
+            page = context.new_page()
+            errors = []
+            page.on("pageerror", lambda exc: errors.append(str(exc)))
+            page.goto(self.url, wait_until="networkidle")
+            page.click("#go")
+            page.wait_for_selector("#statusLine.done", timeout=60000)
+
+            def saved(download):
+                target = Path(tempfile.mkdtemp()) / download.suggested_filename
+                download.save_as(target)
+                return zipfile.ZipFile(target)
+
+            page.click("[data-target=courses]")
+            page.wait_for_selector(".course-card")
+            with page.expect_download() as info:
+                page.click(".course-card .iconbtn")          # 課程卡上的一鍵下載
+            whole = saved(info.value)
+            self.assertIsNone(whole.testzip())
+            self.assertGreater(len(whole.namelist()), 3)
+            self.assertIn("CSIE1212", info.value.suggested_filename)
+
+            page.click(".course-card")
+            page.wait_for_selector(".file-row")
+            boxes = page.locator(".file-row input[type=checkbox]")
+            boxes.nth(0).check()
+            boxes.nth(2).check()
+            page.wait_for_selector("#actionbar:not(.hide)")
+            self.assertIn("已選 2 個", page.inner_text("#pickedLabel"))
+
+            with page.expect_download() as info:
+                page.click("#pickedGo")                       # 只下載勾選的
+            picked = saved(info.value)
+            self.assertEqual(len(picked.namelist()), 2)
+
+            page.click("text=全選／取消")
+            self.assertIn("已選", page.inner_text("#pickedLabel"))
+            page.click("[data-target=downloads]")
+            self.assertFalse(page.is_visible("#actionbar"), "換分頁時動作列要收起來")
+
+            with page.expect_download() as info:
+                page.click("#zipAll")                         # 打包全部課程
+            everything = saved(info.value)
+            self.assertGreater(len(everything.namelist()), len(whole.namelist()))
+            self.assertEqual(errors, [])
+
     def test_manifest_link_carries_the_key_so_the_installed_app_can_get_in(self):
         with self.browser() as browser:
             page = browser.new_page()

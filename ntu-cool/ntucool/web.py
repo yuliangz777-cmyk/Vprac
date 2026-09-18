@@ -11,6 +11,8 @@ import json
 import mimetypes
 import secrets
 import socket
+import time
+import zipfile
 import threading
 import urllib.parse
 from dataclasses import replace
@@ -128,6 +130,34 @@ class SyncJob:
         return self.status == "running"
 
 
+#: 打包下載的「取件單」保留多久（選好檔案到真的按下下載之間）
+TICKET_TTL = 600.0
+MAX_TICKETS = 32
+
+
+class ZipStream:
+    """讓 zipfile 直接寫進 HTTP 連線，不先在記憶體或磁碟上做出整包 zip。"""
+
+    def __init__(self, wfile):
+        self.wfile = wfile
+        self.position = 0
+
+    def write(self, data) -> int:
+        self.wfile.write(data)
+        self.position += len(data)
+        return len(data)
+
+    def tell(self) -> int:
+        return self.position
+
+    def flush(self) -> None:
+        self.wfile.flush()
+
+    @staticmethod
+    def seekable() -> bool:
+        return False  # 逼 zipfile 用串流模式（data descriptor）
+
+
 class WebApp:
     """把設定、目前的同步狀態和輸出資料夾綁在一起。"""
 
@@ -135,6 +165,7 @@ class WebApp:
         self.config = config
         self.key = key
         self.job = SyncJob()
+        self.tickets: dict[str, dict] = {}
 
     # ---- 資料 ----------------------------------------------------------
     def status(self) -> dict:
@@ -233,6 +264,7 @@ class WebApp:
                         "folder": str(item.parent.relative_to(course_dir)),
                         "path": str(item.relative_to(out)),
                         "ext": (item.suffix.lstrip(".") or "file").upper()[:4],
+                        "bytes": item.stat().st_size,
                         "size": human_size(item.stat().st_size),
                     }
                 )
@@ -320,6 +352,57 @@ class WebApp:
                 )
         upcoming.sort(key=lambda item: item["days"])
         return {"upcoming": upcoming, "grades": grades, "generated_at": local_time(now.isoformat())}
+
+    # ---- 打包下載 ------------------------------------------------------
+    def create_ticket(self, paths: list[str], name: str) -> dict:
+        """把選好的檔案記成一張取件單；瀏覽器接著用一般的下載網址來取。
+
+        走這一步是因為選了幾十個檔案時，路徑塞不進網址。
+        """
+        now = time.time()
+        for key in [k for k, v in self.tickets.items() if now - v["created"] > TICKET_TTL]:
+            self.tickets.pop(key, None)
+        while len(self.tickets) >= MAX_TICKETS:
+            oldest = min(self.tickets, key=lambda k: self.tickets[k]["created"])
+            self.tickets.pop(oldest, None)
+
+        resolved = []
+        total = 0
+        for relative in paths:
+            target = self.resolve_download(relative)
+            if target is not None:
+                resolved.append(target)
+                total += target.stat().st_size
+        ticket = secrets.token_urlsafe(9)
+        self.tickets[ticket] = {"files": resolved, "name": name or "ntucool", "created": now}
+        return {"ticket": ticket, "files": len(resolved), "bytes": total, "size": human_size(total)}
+
+    def files_for(self, *, ticket: str = "", course: str = "", everything: bool = False):
+        """回傳 (要打包的檔案清單, zip 檔名)；找不到就回 (None, "")。"""
+        out = Path(self.config.out_dir).resolve()
+        if ticket:
+            entry = self.tickets.get(ticket)
+            if not entry or time.time() - entry["created"] > TICKET_TTL:
+                return None, ""
+            return entry["files"], entry["name"]
+        if course:
+            detail_dir = (out / course).resolve()
+            if detail_dir.parent != out or not detail_dir.is_dir():
+                return None, ""
+            files = [f for f in sorted(detail_dir.rglob("*")) if f.is_file() and not f.name.startswith(".")]
+            return files, course
+        if everything:
+            files = [f for f in sorted(out.rglob("*")) if f.is_file() and not f.name.startswith(".")]
+            return files, "NTU-Course-Hub"
+        return None, ""
+
+    def arcname(self, path: Path) -> str:
+        """zip 裡的相對路徑：保留課程資料夾結構。"""
+        out = Path(self.config.out_dir).resolve()
+        try:
+            return str(path.resolve().relative_to(out))
+        except ValueError:
+            return path.name
 
     def resolve_download(self, relative: str) -> Path | None:
         """把網址對應回輸出資料夾裡的檔案，擋掉跳出資料夾的路徑。"""
@@ -439,6 +522,25 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
+    def _send_zip(self, files, name: str):
+        """邊打包邊送出。內容多半已經是壓縮過的 PDF，所以不再壓一次。"""
+        filename = f"{safe_zip_name(name)}.zip"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{urllib.parse.quote(filename)}")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")  # 長度未知，靠關閉連線標示結束
+        self.end_headers()
+        if self.command == "HEAD":
+            return
+        stream = ZipStream(self.wfile)
+        try:
+            with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_STORED) as archive:
+                for item in files:
+                    archive.write(item, arcname=self.app.arcname(item))
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # 使用者取消下載
+
     def _json(self, payload, status: int = 200):
         self._send(status, json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
 
@@ -505,6 +607,15 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/progress":
             start = int((query.get("from") or ["0"])[0] or 0)
             return self._json(self.app.job.snapshot(start))
+        if path == "/api/zip":
+            files, name = self.app.files_for(
+                ticket=(query.get("ticket") or [""])[0],
+                course=(query.get("dir") or [""])[0],
+                everything=(query.get("all") or [""])[0] == "1",
+            )
+            if not files:
+                return self._text(404, "沒有可以打包的檔案（或取件連結已過期）")
+            return self._send_zip(files, name)
         if path.startswith("/files/"):
             target = self.app.resolve_download(path[len("/files/") :])
             if target is None:
@@ -521,7 +632,7 @@ class Handler(BaseHTTPRequestHandler):
         query = urllib.parse.parse_qs(parsed.query)
         if not self._authorized(query):
             return self._text(403, "存取金鑰不正確")
-        if parsed.path not in ("/api/sync", "/api/login", "/api/logout"):
+        if parsed.path not in ("/api/sync", "/api/login", "/api/logout", "/api/zip-ticket"):
             return self._text(404, "沒有這個端點")
         length = int(self.headers.get("Content-Length") or 0)
         try:
@@ -537,11 +648,25 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/logout":
             self.app.logout()
             return self._json({"ok": True})
+        if parsed.path == "/api/zip-ticket":
+            paths = payload.get("paths") or []
+            if not isinstance(paths, list) or not paths:
+                return self._text(400, "沒有選擇任何檔案")
+            result = self.app.create_ticket([str(p) for p in paths[:2000]], str(payload.get("name") or ""))
+            if not result["files"]:
+                return self._text(404, "選到的檔案都不存在")
+            return self._json(result)
         if not self.app.config.token:
             return self._text(401, "尚未登入")
         if not self.app.start_sync(payload):
             return self._text(409, "已經有一個同步在進行中")
         return self._json({"started": True})
+
+
+def safe_zip_name(name: str) -> str:
+    """zip 檔名：拿掉路徑符號，長度也收斂一下。"""
+    cleaned = "".join(ch for ch in str(name or "ntucool") if ch not in '\\/:*?"<>|' and ch.isprintable())
+    return (cleaned.strip() or "ntucool")[:80]
 
 
 def lan_ip() -> str:

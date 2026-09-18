@@ -1,7 +1,9 @@
 """本機網頁介面測試：真的起伺服器、真的用 HTTP 打它。"""
 
+import io
 import json
 import tempfile
+import zipfile
 import threading
 import time
 import unittest
@@ -454,6 +456,106 @@ class TestCourseEndpoints(WebTestCase):
         self.assertGreater(data["bytes"], 0)
         self.assertEqual(data["term"], "113-2")
         self.assertFalse(data["syncing"])
+
+
+class TestZipDownload(WebTestCase):
+    """一鍵下載與多選下載：把檔案打包成 zip 送到使用者的裝置上。"""
+
+    def zip_from(self, path):
+        status, body, headers = self.get(path)
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Content-Type"], "application/zip")
+        return zipfile.ZipFile(io.BytesIO(body)), headers
+
+    def test_one_click_downloads_a_whole_course(self):
+        self.sync_and_wait()
+        dirname = next(c["dir"] for c in json.loads(self.get("/api/courses")[1])["courses"]
+                       if c["code"] == "CSIE1212")
+        archive, headers = self.zip_from(f"/api/zip?dir={urllib.request.quote(dirname)}")
+        names = archive.namelist()
+        self.assertIn(f"{dirname}/files/講義/第一週/week1-投影片.pdf", names)
+        self.assertIn(f"{dirname}/course.md", names)
+        self.assertIsNone(archive.testzip())          # 每個項目都讀得出來
+        self.assertIn("attachment", headers["Content-Disposition"])
+        self.assertIn(urllib.request.quote(f"{dirname}.zip"), headers["Content-Disposition"])
+
+    def test_zip_contents_match_the_originals(self):
+        self.sync_and_wait()
+        dirname = next(c["dir"] for c in json.loads(self.get("/api/courses")[1])["courses"]
+                       if c["code"] == "CSIE1212")
+        archive, _ = self.zip_from(f"/api/zip?dir={urllib.request.quote(dirname)}")
+        inside = archive.read(f"{dirname}/files/講義/第一週/week1-投影片.pdf")
+        self.assertEqual(inside, (self.out / dirname / "files/講義/第一週/week1-投影片.pdf").read_bytes())
+
+    def test_download_everything(self):
+        self.sync_and_wait()
+        archive, headers = self.zip_from("/api/zip?all=1")
+        self.assertGreater(len(archive.namelist()), 5)
+        self.assertIn("NTU-Course-Hub.zip", urllib.request.unquote(headers["Content-Disposition"]))
+        self.assertFalse([n for n in archive.namelist() if "/." in n or n.startswith(".")])
+
+    def test_multi_select_goes_through_a_ticket(self):
+        self.sync_and_wait()
+        dirname = next(c["dir"] for c in json.loads(self.get("/api/courses")[1])["courses"]
+                       if c["code"] == "CSIE1212")
+        detail = json.loads(self.get(f"/api/course?dir={urllib.request.quote(dirname)}")[1])
+        chosen = [f["path"] for f in detail["files"] if f["name"].endswith((".pdf", ".zip"))][:3]
+
+        status, result = self.post("/api/zip-ticket", {"paths": chosen, "name": "我選的講義"})
+        self.assertEqual(status, 200)
+        self.assertEqual(result["files"], len(chosen))
+        self.assertGreater(result["bytes"], 0)
+
+        archive, headers = self.zip_from(f"/api/zip?ticket={result['ticket']}")
+        self.assertEqual(sorted(archive.namelist()), sorted(chosen))
+        self.assertIn("我選的講義", urllib.request.unquote(headers["Content-Disposition"]))
+
+    def test_ticket_ignores_paths_outside_the_output_folder(self):
+        self.sync_and_wait()
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.post("/api/zip-ticket", {"paths": ["../../etc/passwd", "nope.pdf"], "name": "x"})
+        self.assertEqual(caught.exception.code, 404)   # 全部無效 → 沒有東西可打包
+
+    def test_ticket_keeps_only_the_valid_paths(self):
+        self.sync_and_wait()
+        dirname = next(c["dir"] for c in json.loads(self.get("/api/courses")[1])["courses"]
+                       if c["code"] == "CSIE1212")
+        good = f"{dirname}/course.md"
+        _, result = self.post("/api/zip-ticket", {"paths": [good, "../../etc/passwd"], "name": "mix"})
+        self.assertEqual(result["files"], 1)
+        archive, _ = self.zip_from(f"/api/zip?ticket={result['ticket']}")
+        self.assertEqual(archive.namelist(), [good])
+
+    def test_expired_or_unknown_ticket(self):
+        from ntucool import web as web_module
+
+        self.sync_and_wait()
+        dirname = next(c["dir"] for c in json.loads(self.get("/api/courses")[1])["courses"]
+                       if c["code"] == "CSIE1212")
+        _, result = self.post("/api/zip-ticket", {"paths": [f"{dirname}/course.md"], "name": "x"})
+        self.httpd.app.tickets[result["ticket"]]["created"] -= web_module.TICKET_TTL + 1
+        for query in (f"?ticket={result['ticket']}", "?ticket=nonsense", "?dir=nope", ""):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self.get("/api/zip" + query)
+            self.assertEqual(caught.exception.code, 404, query)
+
+    def test_tickets_do_not_pile_up(self):
+        self.sync_and_wait()
+        dirname = next(c["dir"] for c in json.loads(self.get("/api/courses")[1])["courses"]
+                       if c["code"] == "CSIE1212")
+        for _ in range(40):
+            self.post("/api/zip-ticket", {"paths": [f"{dirname}/course.md"], "name": "x"})
+        self.assertLessEqual(len(self.httpd.app.tickets), 32)
+
+    def test_empty_selection_is_rejected(self):
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.post("/api/zip-ticket", {"paths": []})
+        self.assertEqual(caught.exception.code, 400)
+
+    def test_zip_needs_the_key(self):
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.get("/api/zip?all=1", key=False)
+        self.assertEqual(caught.exception.code, 403)
 
 
 class TestProgressAggregation(WebTestCase):
