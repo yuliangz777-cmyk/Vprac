@@ -17,6 +17,7 @@ from .models import (
     normalize_announcement,
     normalize_assignment,
     normalize_course,
+    normalize_event,
     normalize_file,
     normalize_module,
     normalize_page,
@@ -44,6 +45,7 @@ class CourseResult:
     bytes: int = 0
     assignments: int = 0
     announcements: int = 0
+    events: int = 0
     pages: int = 0
     modules: int = 0
     failures: list[str] = field(default_factory=list)
@@ -196,6 +198,10 @@ class Scraper:
             ]
             result.announcements = len(data["announcements"])
 
+        if cfg.wants("calendar"):
+            data["events"] = self._fetch_events(cid)
+            result.events = len(data["events"])
+
         if cfg.wants("pages"):
             data["pages"] = self._fetch_pages(cid)
             result.pages = len(data["pages"])
@@ -226,6 +232,20 @@ class Scraper:
 
         body = raw.get("syllabus_body") or ""
         return html_to_text(body), body
+
+    def _fetch_events(self, cid) -> list[dict]:
+        """課程行事曆（考試、活動）。作業的截止日另有來源，這裡只取 type=event。"""
+        raw_events = self.client.paginate_safe(
+            "calendar_events",
+            {"context_codes": [f"course_{cid}"], "type": "event", "all_events": True},
+            label="行事曆",
+        )
+        events = [
+            normalize_event(item)
+            for item in raw_events
+            if item.get("workflow_state") not in ("deleted",) and not item.get("hidden")
+        ]
+        return sorted(events, key=lambda e: e.get("start_at") or "")
 
     def _fetch_pages(self, cid) -> list[dict]:
         pages = []

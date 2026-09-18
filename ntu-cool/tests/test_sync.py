@@ -87,6 +87,21 @@ class TestFullSync(SyncTestCase):
         self.assertIn("本課程使用 C++", data["pages"][0]["body_text"])
         self.assertNotIn("_announcement_attachments", data)
 
+    def test_calendar_events_are_fetched_and_filtered(self):
+        self.make_scraper().run()
+        data = json.loads((self.course_dir / "course.json").read_text(encoding="utf-8"))
+        titles = [e["title"] for e in data["events"]]
+        self.assertEqual(titles, ["期中考"])          # 已刪除的事件不該出現
+        event = data["events"][0]
+        self.assertEqual(event["location"], "資訊館 104")
+        self.assertIn("第 1–6 週", event["description_text"])
+        self.assertIn("行事曆", (self.course_dir / "course.md").read_text(encoding="utf-8"))
+
+    def test_calendar_can_be_skipped(self):
+        self.make_scraper(sections=("info", "files")).run()
+        data = json.loads((self.course_dir / "course.json").read_text(encoding="utf-8"))
+        self.assertNotIn("events", data)
+
     def test_markdown_summary_has_key_facts(self):
         self.make_scraper().run()
         text = (self.course_dir / "course.md").read_text(encoding="utf-8")

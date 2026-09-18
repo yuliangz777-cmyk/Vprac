@@ -176,6 +176,31 @@ ANNOUNCEMENTS = {
     202: [],
 }
 
+CALENDAR_EVENTS = {
+    101: [
+        {
+            "id": 901,
+            "title": "期中考",
+            "start_at": _iso(10),
+            "end_at": _iso(10.1),
+            "location_name": "資訊館 104",
+            "description": "<p>範圍：第 1–6 週</p>",
+            "html_url": "http://example/calendar?event_id=901",
+            "context_code": "course_101",
+            "workflow_state": "active",
+        },
+        {
+            "id": 902,
+            "title": "已取消的加開課",
+            "start_at": _iso(5),
+            "html_url": "http://example/calendar?event_id=902",
+            "context_code": "course_101",
+            "workflow_state": "deleted",   # 不該出現在清單裡
+        },
+    ],
+    202: [],
+}
+
 PAGES = {
     101: [{"page_id": 1, "url": "welcome", "title": "課程公告", "updated_at": "2026-02-19T01:00:00Z"}],
     202: [],
@@ -310,6 +335,15 @@ class _Handler(BaseHTTPRequestHandler):
 
         if path == "/api/v1/users/self/profile":
             return self._send(200, {"id": 1, "name": "測試同學", "primary_email": "student@ntu.edu.tw"})
+
+        if path == "/api/v1/calendar_events":
+            # 真實 Canvas 是頂層端點，用 context_codes[] 指定課程
+            contexts = query.get("context_codes[]") or query.get("context_codes") or []
+            events = []
+            for context in contexts:
+                if context.startswith("course_"):
+                    events += CALENDAR_EVENTS.get(int(context.split("_", 1)[1]), [])
+            return self._page(events, path, query)
 
         if path == "/api/v1/courses":
             state = (query.get("enrollment_state") or [None])[0]

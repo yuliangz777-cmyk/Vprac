@@ -168,6 +168,33 @@ class TestInstallableAndOffline(unittest.TestCase):
             self.assertGreater(len(everything.namelist()), len(whole.namelist()))
             self.assertEqual(errors, [])
 
+    def test_semester_selector_and_calendar(self):
+        with self.browser() as browser:
+            page = browser.new_page(viewport={"width": 390, "height": 844})
+            errors = []
+            page.on("pageerror", lambda exc: errors.append(str(exc)))
+            page.goto(self.url, wait_until="networkidle")
+            page.click("#go")
+            page.wait_for_selector("#statusLine.done", timeout=60000)
+
+            page.click("[data-target=home]")
+            page.wait_for_selector("#eventsHead:not(.hide)", timeout=10000)
+            calendar = page.inner_text("#events")
+            self.assertIn("期中考", calendar)
+            self.assertIn("資訊館 104", calendar)
+
+            page.click("[data-target=courses]")
+            page.wait_for_selector(".course-card")
+            self.assertIn("113-2（2 門）", page.locator("#termSelect").inner_text())
+            page.select_option("#termSelect", "113-2")
+            page.wait_for_timeout(600)
+            self.assertEqual(page.locator(".course-card").count(), 2)
+
+            page.reload(wait_until="networkidle")      # 選好的學期要記得
+            page.wait_for_timeout(800)
+            self.assertEqual(page.input_value("#termSelect"), "113-2")
+            self.assertEqual(errors, [])
+
     def test_manifest_link_carries_the_key_so_the_installed_app_can_get_in(self):
         with self.browser() as browser:
             page = browser.new_page()

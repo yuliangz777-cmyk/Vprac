@@ -39,6 +39,8 @@ html{background:var(--bg)}
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Noto Sans TC",sans-serif;
   color:var(--text);background:var(--bg)}
 button,select,input{font:inherit}
+select{background:var(--card);color:var(--text);border:1px solid var(--line);
+  border-radius:11px;padding:9px 11px}
 .app-shell{max-width:920px;min-height:100vh;margin:auto;background:var(--shell);
   padding:0 22px calc(104px + env(safe-area-inset-bottom))}
 .topbar{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--shell) 88%,transparent);
@@ -203,6 +205,9 @@ button,select,input{font:inherit}
       <div class="section-head"><h3>近期作業</h3><button class="link" onclick="go('courses')">查看課程</button></div>
       <div id="upcoming"></div>
 
+      <div class="section-head hide" id="eventsHead"><h3>近期行事曆</h3></div>
+      <div id="events"></div>
+
       <div class="section-head"><h3>文件同步</h3><span class="muted" id="syncText">尚未同步</span></div>
       <div class="card">
         <div class="storage">
@@ -213,7 +218,9 @@ button,select,input{font:inherit}
     </section>
 
     <section class="page" data-page="courses">
-      <div class="section-head"><h2>我的課程</h2><span class="muted" id="courseCount"></span></div>
+      <div class="section-head"><h2>我的課程</h2>
+        <select id="termSelect" onchange="onTermChange()" aria-label="學期"></select></div>
+      <p class="muted" id="courseCount" style="margin:8px 0 0"></p>
       <div class="course-grid" id="courseGrid"></div>
     </section>
 
@@ -293,7 +300,9 @@ const api = (path, opts) => fetch(path + (path.includes('?') ? '&' : '?') + 'k='
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const titles = {home:'首頁', courses:'課程', downloads:'下載', settings:'設定', detail:'課程', login:'連結帳號'};
-let state = {authenticated:false, courses:[]};
+let state = {authenticated:false, courses:[], term:''};
+try{ state.term = localStorage.getItem('ntucool.term') || ''; }catch(e){}
+const withTerm = path => state.term ? path + (path.includes('?') ? '&' : '?') + 'term=' + encodeURIComponent(state.term) : path;
 
 function go(name){
   if(name !== 'detail' && document.getElementById('actionbar')) $('actionbar').classList.add('hide');
@@ -339,7 +348,8 @@ async function loadStatus(){
 
 async function loadDashboard(){
   try{
-    const d = await (await api('/api/dashboard')).json();
+    const d = await (await api(withTerm('/api/dashboard'))).json();
+    renderEvents(d.events || []);
     const soon = d.upcoming.filter(i => !i.submitted).length;
     $('heroSummary').textContent = soon ? `有 ${soon} 份作業還沒交。` : '目前沒有待繳的作業。';
     $('upcoming').innerHTML = d.upcoming.length
@@ -355,9 +365,65 @@ async function loadDashboard(){
   }catch(e){ /* 離線時沿用畫面上的內容 */ }
 }
 
+function groupByDate(items){
+  const groups = new Map();
+  for(const item of items){
+    const day = String(item.start_at || '').slice(0, 10) || '未定';
+    if(!groups.has(day)) groups.set(day, []);
+    groups.get(day).push(item);
+  }
+  return [...groups.entries()];
+}
+
+function dayLabel(day){
+  if(day === '未定') return '未定';
+  const date = new Date(day + 'T00:00:00');
+  if(isNaN(date)) return day;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.round((date - today) / 86400000);
+  if(diff === 0) return '今天';
+  if(diff === 1) return '明天';
+  const week = ['日','一','二','三','四','五','六'][date.getDay()];
+  return `${date.getMonth() + 1}/${date.getDate()}（${week}）`;
+}
+
+function renderEvents(events){
+  $('eventsHead').classList.toggle('hide', !events.length);
+  if(!events.length){ $('events').innerHTML = ''; return; }
+  $('events').innerHTML = groupByDate(events).map(([day, items]) => `
+    <div class="section-head" style="margin-top:14px"><small><b>${esc(dayLabel(day))}</b></small></div>
+    <div class="card">${items.map(e => {
+      const time = String(e.start_at || '').slice(11, 16);
+      const title = e.url ? `<a class="link" href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.title)}</a>` : esc(e.title);
+      return `<div class="row"><span class="time">${esc(time)}</span>
+        <div><b>${title}</b><small>${esc(e.course)}${e.location ? ' · ' + esc(e.location) : ''}</small></div></div>`;
+    }).join('')}</div>`).join('');
+}
+
+async function loadTerms(){
+  try{
+    const data = await (await api('/api/terms')).json();
+    const select = $('termSelect');
+    const options = [{term:'', label:'全部學期'}]
+      .concat(data.terms.map(t => ({term:t.term, label:`${t.term}（${t.courses} 門）`})));
+    select.innerHTML = options.map(o =>
+      `<option value="${esc(o.term)}"${o.term === state.term ? ' selected' : ''}>${esc(o.label)}</option>`).join('');
+    if(state.term && !data.terms.some(t => t.term === state.term)){
+      state.term = '';             // 選過的學期已經不在資料裡
+      select.value = '';
+    }
+  }catch(e){}
+}
+
+function onTermChange(){
+  state.term = $('termSelect').value;
+  try{ localStorage.setItem('ntucool.term', state.term); }catch(e){}
+  loadCourses(); loadDashboard();
+}
+
 async function loadCourses(){
   try{
-    const data = await (await api('/api/courses')).json();
+    const data = await (await api(withTerm('/api/courses'))).json();
     state.courses = data.courses;
     $('courseCount').textContent = data.courses.length ? `${data.courses.length} 門` : '';
     $('courseGrid').innerHTML = data.courses.length
@@ -481,6 +547,7 @@ async function startSync(){
     pdf_only: $('pdfOnly').checked,
     skip_big: $('skipBig').checked,
     courses: selectedCourses().join(','),
+    term: state.term,
   });
   try{
     const res = await api('/api/sync', {method:'POST', headers:{'Content-Type':'application/json'}, body});
@@ -518,7 +585,7 @@ async function poll(){
     polling = setTimeout(poll, 700);
   }else{
     $('go').disabled = false;
-    loadStatus(); loadCourses(); loadDashboard();
+    loadStatus(); loadTerms(); loadCourses(); loadDashboard();
   }
 }
 
@@ -583,7 +650,7 @@ if('serviceWorker' in navigator){
 renderDownloads([], 'idle');
 (async () => {
   const s = await loadStatus();
-  if(s && s.authenticated){ loadCourses(); loadDashboard(); }
+  if(s && s.authenticated){ loadTerms(); loadCourses(); loadDashboard(); }
 })();
 </script>
 </body>

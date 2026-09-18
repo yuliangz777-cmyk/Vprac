@@ -558,6 +558,57 @@ class TestZipDownload(WebTestCase):
         self.assertEqual(caught.exception.code, 403)
 
 
+class TestSemesterAndCalendar(WebTestCase):
+    """學期選擇器與行事曆（Phase 03）。"""
+
+    def test_terms_are_listed_with_course_counts(self):
+        self.sync_and_wait()
+        _, body, _ = self.get("/api/terms")
+        self.assertEqual(json.loads(body)["terms"], [{"term": "113-2", "courses": 2}])
+
+    def test_courses_can_be_filtered_by_term(self):
+        self.sync_and_wait()
+        self.assertEqual(len(json.loads(self.get("/api/courses?term=113-2")[1])["courses"]), 2)
+        self.assertEqual(json.loads(self.get("/api/courses?term=112-1")[1])["courses"], [])
+
+    def test_dashboard_can_be_filtered_by_term(self):
+        self.sync_and_wait()
+        full = json.loads(self.get("/api/dashboard")[1])
+        self.assertTrue(full["upcoming"])
+        empty = json.loads(self.get("/api/dashboard?term=112-1")[1])
+        self.assertEqual((empty["upcoming"], empty["events"], empty["grades"]), ([], [], []))
+        self.assertEqual(empty["term"], "112-1")
+
+    def test_upcoming_events_appear_with_course_and_location(self):
+        self.sync_and_wait()
+        events = json.loads(self.get("/api/dashboard")[1])["events"]
+        self.assertEqual(len(events), 1)
+        event = events[0]
+        self.assertEqual(event["title"], "期中考")
+        self.assertEqual(event["course"], "CSIE1212")
+        self.assertEqual(event["location"], "資訊館 104")
+        self.assertRegex(event["start_at"], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$")
+        self.assertTrue(0 < event["days"] <= 30)
+
+    def test_far_away_and_past_events_are_hidden(self):
+        self.sync_and_wait()
+        dirname = next(c["dir"] for c in json.loads(self.get("/api/courses")[1])["courses"]
+                       if c["code"] == "CSIE1212")
+        source = self.out / dirname / "course.json"
+        data = json.loads(source.read_text(encoding="utf-8"))
+        far = (datetime.now(timezone.utc) + timedelta(days=90)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        past = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        data["events"] = [{"title": "太遠", "start_at": far}, {"title": "已過", "start_at": past}]
+        source.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        self.assertEqual(json.loads(self.get("/api/dashboard")[1])["events"], [])
+
+    def test_sync_can_be_limited_to_one_term(self):
+        app = self.httpd.app
+        self.assertEqual(app.config_for({"term": "113-2"}).terms, ("113-2",))
+        self.assertEqual(app.config_for({"term": "未分類"}).terms, ())
+        self.assertEqual(app.config_for({}).terms, ())
+
+
 class TestProgressAggregation(WebTestCase):
     """每門課的進度條：由 Scraper 丟出的事件累積而成。"""
 

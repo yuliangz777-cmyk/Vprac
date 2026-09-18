@@ -21,7 +21,8 @@ CONFIG_CANDIDATES = (
 #: 依序尋找的 .env 位置。
 ENV_CANDIDATES = (Path(".env"), Path.home() / ".config" / "ntucool" / ".env")
 
-ALL_SECTIONS = ("info", "syllabus", "files", "assignments", "announcements", "modules", "pages")
+ALL_SECTIONS = ("info", "syllabus", "files", "assignments", "announcements",
+                "calendar", "modules", "pages")
 
 
 @dataclass

@@ -209,7 +209,7 @@ class WebApp:
                     break
         return {"files": files, "bytes": total, "term": term}
 
-    def courses(self) -> list[dict]:
+    def courses(self, term: str = "") -> list[dict]:
         """課程清單：名稱、課號、教師、檔案數與容量，全部來自已抓下來的資料。"""
         out = Path(self.config.out_dir)
         result = []
@@ -224,6 +224,8 @@ class WebApp:
             except (json.JSONDecodeError, OSError):
                 continue
             course = data.get("course") or {}
+            if term and (course.get("term") or "未分類") != term:
+                continue
             files_dir = course_dir / "files"
             downloaded = [f for f in files_dir.rglob("*") if f.is_file()] if files_dir.is_dir() else []
             result.append(
@@ -300,16 +302,24 @@ class WebApp:
                     courses.append({"name": course_dir.name, "files": entries})
         return {"courses": courses}
 
-    def dashboard(self, *, now: datetime | None = None) -> dict:
+    def terms(self) -> list[dict]:
+        """已經抓下來的資料涵蓋哪些學期。"""
+        counts: dict[str, int] = {}
+        for course in self.courses():
+            counts[course.get("term") or "未分類"] = counts.get(course.get("term") or "未分類", 0) + 1
+        return [{"term": term, "courses": count} for term, count in sorted(counts.items(), reverse=True)]
+
+    def dashboard(self, *, now: datetime | None = None, term: str = "") -> dict:
         """跨課程的一眼看完：近期作業截止 + 各課成績。
 
         資料直接讀已經抓下來的 course.json，所以離線也看得到，也不會多打 API。
         """
         now = now or datetime.now(timezone.utc)
-        upcoming, grades = [], []
+        upcoming, grades, events = [], [], []
         out = Path(self.config.out_dir)
         if not out.is_dir():
-            return {"upcoming": [], "grades": [], "generated_at": local_time(now.isoformat())}
+            return {"upcoming": [], "events": [], "grades": [], "term": term,
+                    "generated_at": local_time(now.isoformat())}
 
         for course_dir in sorted(p for p in out.iterdir() if p.is_dir()):
             source = course_dir / "course.json"
@@ -320,7 +330,25 @@ class WebApp:
             except (json.JSONDecodeError, OSError):
                 continue
             course = data.get("course") or {}
+            if term and (course.get("term") or "未分類") != term:
+                continue
             label = course.get("course_code") or course.get("name") or course_dir.name
+            for event in data.get("events") or []:
+                start = parse_iso(event.get("start_at"))
+                if start is None:
+                    continue
+                days = (start - now).total_seconds() / 86400
+                if -1 < days <= 30:
+                    events.append(
+                        {
+                            "course": label,
+                            "title": event.get("title"),
+                            "start_at": local_time(event.get("start_at")),
+                            "days": round(days, 2),
+                            "location": event.get("location") or "",
+                            "url": event.get("url") or "",
+                        }
+                    )
             grades.append(
                 {
                     "course": label,
@@ -351,7 +379,9 @@ class WebApp:
                     }
                 )
         upcoming.sort(key=lambda item: item["days"])
-        return {"upcoming": upcoming, "grades": grades, "generated_at": local_time(now.isoformat())}
+        events.sort(key=lambda item: item["days"])
+        return {"upcoming": upcoming, "events": events, "grades": grades,
+                "term": term, "generated_at": local_time(now.isoformat())}
 
     # ---- 打包下載 ------------------------------------------------------
     def create_ticket(self, paths: list[str], name: str) -> dict:
@@ -428,6 +458,9 @@ class WebApp:
             config = replace(config, extensions=("pdf", "pptx", "ppt", "doc", "docx"))
         if options.get("skip_big"):
             config = replace(config, max_file_mb=50.0)
+        term = str(options.get("term") or "").strip()
+        if term and term != "未分類":
+            config = replace(config, terms=(term,))
         courses = str(options.get("courses") or "").strip()
         if courses:
             config = replace(
@@ -594,14 +627,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
         if path == "/api/status":
             return self._json(self.app.status())
+        if path == "/api/terms":
+            return self._json({"terms": self.app.terms()})
         if path == "/api/courses":
-            return self._json({"courses": self.app.courses()})
+            return self._json({"courses": self.app.courses((query.get("term") or [""])[0])})
         if path == "/api/course":
             name = (query.get("dir") or [""])[0]
             detail = self.app.course_detail(name)
             return self._json(detail) if detail else self._text(404, "找不到這門課程")
         if path == "/api/dashboard":
-            return self._json(self.app.dashboard())
+            return self._json(self.app.dashboard(term=(query.get("term") or [""])[0]))
         if path == "/api/files":
             return self._json(self.app.files())
         if path == "/api/progress":

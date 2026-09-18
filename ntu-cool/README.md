@@ -85,7 +85,7 @@ python3 -m ntucool sync --watch 6h
 ```
 
 `--only` 可以指定要抓哪些區塊，逗號分隔：
-`info,syllabus,files,assignments,announcements,modules,pages`。
+`info,syllabus,files,assignments,announcements,calendar,modules,pages`。
 
 ---
 
@@ -260,8 +260,9 @@ python3 -m ntucool web --open
 
 介面是手機優先的四分頁 App：
 
-- **首頁**：問候、待繳作業數、近期作業（逾期紅／快到期黃／已繳交綠）、一鍵同步
-- **課程**：課程卡片牆，點進去看該課的作業與所有檔案，點檔名直接開；
+- **首頁**：問候、待繳作業數、近期作業（逾期紅／快到期黃／已繳交綠）、
+  **近期行事曆**（考試與活動，依日期分組）、一鍵同步
+- **課程**：**學期選擇器**＋課程卡片牆，點進去看該課的作業與所有檔案，點檔名直接開；
   卡片右上角的 **⤓** 可以一鍵把整門課打包成 zip 存到你的裝置
 - **下載**：每門課一條進度條，可展開同步記錄；上面是已完成檔案數與佔用空間，
   另有「打包全部課程」一次帶走
@@ -389,6 +390,11 @@ ntucool/
 ├── htmlutil.py   HTML → 純文字、挖出內嵌檔案連結
 └── report.py     產生 Markdown
 ```
+
+## 文件
+
+- [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md)：做不到的、刻意不做的、還沒驗證的
+- [`docs/REAL_WORLD_TEST.md`](docs/REAL_WORLD_TEST.md)：第一次對真實 NTU COOL 執行時的驗證步驟
 
 ## 使用規範
 

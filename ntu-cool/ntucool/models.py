@@ -138,6 +138,19 @@ def normalize_module(raw: dict) -> dict:
     }
 
 
+def normalize_event(raw: dict) -> dict:
+    return {
+        "id": raw.get("id"),
+        "title": raw.get("title"),
+        "start_at": raw.get("start_at"),
+        "end_at": raw.get("end_at"),
+        "location": _get(raw, "location_name", "location_address", default=""),
+        "url": raw.get("html_url") or "",
+        "description_text": html_to_text(raw.get("description")),
+        "all_day": bool(raw.get("all_day")),
+    }
+
+
 def normalize_page(raw: dict, body: str | None = None) -> dict:
     html_body = body if body is not None else raw.get("body")
     return {

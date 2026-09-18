@@ -76,6 +76,15 @@ def course_markdown(data: dict) -> str:
         ]
         out += _section("公告", lines)
 
+    events = data.get("events") or []
+    if events:
+        lines = [
+            f"- {local_time(e.get('start_at'))}　**{e.get('title')}**"
+            + (f"（{e.get('location')}）" if e.get("location") else "")
+            for e in events
+        ]
+        out += _section("行事曆", lines)
+
     files = data.get("files") or []
     if files:
         lines = ["| 檔案 | 位置 | 大小 | 更新時間 |", "| --- | --- | --- | --- |"]
