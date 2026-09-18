@@ -195,6 +195,48 @@ class TestInstallableAndOffline(unittest.TestCase):
             self.assertEqual(page.input_value("#termSelect"), "113-2")
             self.assertEqual(errors, [])
 
+    def test_search_diagnostics_and_delete(self):
+        with self.browser() as browser:
+            page = browser.new_page(viewport={"width": 390, "height": 844})
+            errors = []
+            page.on("pageerror", lambda exc: errors.append(str(exc)))
+            page.on("dialog", lambda dialog: dialog.accept())
+            page.goto(self.url, wait_until="networkidle")
+            page.click("#go")
+            page.wait_for_selector("#statusLine.done", timeout=60000)
+
+            # 搜尋
+            page.click("[data-target=courses]")
+            page.wait_for_selector(".course-card")
+            page.fill("#searchBox", "投影片")
+            page.wait_for_selector("#searchResults .row", timeout=10000)
+            self.assertIn("week1-投影片.pdf", page.inner_text("#searchResults"))
+            self.assertFalse(page.is_visible("#courseGrid"))
+            page.fill("#searchBox", "找不到的東西zzz")
+            page.wait_for_selector("#searchResults .empty", timeout=10000)
+            page.fill("#searchBox", "")                     # 清空要回到課程牆
+            page.wait_for_selector(".course-card", timeout=10000)
+
+            # 診斷
+            page.click("[data-target=settings]")
+            page.click("text=診斷資訊")
+            page.wait_for_function("document.getElementById('diag').textContent.includes('模式')", timeout=10000)
+            diagnostics = page.inner_text("#diag")
+            self.assertIn("本機伺服器", diagnostics)
+            self.assertIn("API 呼叫", diagnostics)
+            self.assertNotIn(TOKEN, diagnostics)
+
+            # 刪除
+            page.click("[data-target=courses]")
+            page.wait_for_selector(".course-card")
+            before = page.locator(".course-card").count()
+            page.click(".course-card")
+            page.wait_for_selector(".file-row")
+            page.click("text=刪除已下載的檔案")
+            page.wait_for_function(
+                f"document.querySelectorAll('.course-card').length === {before - 1}", timeout=15000)
+            self.assertEqual(errors, [])
+
     def test_manifest_link_carries_the_key_so_the_installed_app_can_get_in(self):
         with self.browser() as browser:
             page = browser.new_page()

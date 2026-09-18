@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import platform
 import secrets
+import shutil
 import socket
 import time
 import zipfile
@@ -76,6 +78,7 @@ class SyncJob:
     def __init__(self):
         self.lines: list[str] = []
         self.status = "idle"  # idle / running / done / error
+        self.cancelled = False
         self.courses: dict[str, dict] = {}   # 課程 → 進度
         self.order: list[str] = []           # 保持課程出現的順序
         self.lock = threading.Lock()
@@ -123,11 +126,19 @@ class SyncJob:
                 else:
                     entry["percent"] = int(done * 100 / total) if total else (5 if entry["state"] == "running" else 0)
                 courses.append(entry)
-            return {"status": self.status, "lines": self.lines[start:], "courses": courses}
+            return {"status": self.status, "lines": self.lines[start:],
+                    "courses": courses, "cancelled": self.cancelled}
 
     @property
     def running(self) -> bool:
         return self.status == "running"
+
+    def cancel(self) -> bool:
+        if not self.running:
+            return False
+        self.cancelled = True
+        self.log("正在取消……（等目前這個檔案結束）")
+        return True
 
 
 #: 打包下載的「取件單」保留多久（選好檔案到真的按下下載之間）
@@ -166,6 +177,7 @@ class WebApp:
         self.key = key
         self.job = SyncJob()
         self.tickets: dict[str, dict] = {}
+        self.last_run: dict = {}          # 給診斷畫面看的上一次同步摘要
 
     # ---- 資料 ----------------------------------------------------------
     def status(self) -> dict:
@@ -434,6 +446,98 @@ class WebApp:
         except ValueError:
             return path.name
 
+    def search(self, query: str, *, term: str = "", limit: int = 60) -> dict:
+        """跨課程搜尋：檔名、課程、作業、公告、行事曆。只讀本機資料，離線可用。"""
+        needle = str(query or "").strip().lower()
+        if not needle:
+            return {"query": "", "results": [], "total": 0}
+        out = Path(self.config.out_dir)
+        results: list[dict] = []
+        if not out.is_dir():
+            return {"query": query, "results": [], "total": 0}
+
+        def add(kind, label, sub, course, **extra):
+            results.append({"kind": kind, "label": label, "sub": sub, "course": course, **extra})
+
+        for course_dir in sorted(p for p in out.iterdir() if p.is_dir()):
+            source = course_dir / "course.json"
+            if not source.is_file():
+                continue
+            try:
+                data = json.loads(source.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            course = data.get("course") or {}
+            if term and (course.get("term") or "未分類") != term:
+                continue
+            label = course.get("course_code") or course.get("name") or course_dir.name
+
+            haystack = " ".join(str(course.get(k) or "") for k in ("name", "course_code"))
+            haystack += " " + "、".join(course.get("teachers") or [])
+            if needle in haystack.lower():
+                add("course", course.get("name") or label, f"{label} · 課程", label, dir=course_dir.name)
+
+            for item in sorted(course_dir.rglob("*")):
+                if not item.is_file() or item.name.startswith("."):
+                    continue
+                if needle in item.name.lower():
+                    folder = str(item.parent.relative_to(course_dir)).replace("files", "", 1).strip("/.")
+                    add("file", item.name, f"{label}{' · ' + folder if folder else ''}", label,
+                        path=str(item.relative_to(out)), size=human_size(item.stat().st_size))
+
+            for item in data.get("assignments") or []:
+                if needle in str(item.get("name") or "").lower():
+                    add("assignment", item.get("name"), f"{label} · 作業", label, url=item.get("url") or "")
+            for item in data.get("announcements") or []:
+                if needle in str(item.get("title") or "").lower():
+                    add("announcement", item.get("title"), f"{label} · 公告", label, url=item.get("url") or "")
+            for item in data.get("events") or []:
+                if needle in str(item.get("title") or "").lower():
+                    add("event", item.get("title"), f"{label} · 行事曆", label, url=item.get("url") or "")
+
+        order = {"file": 0, "assignment": 1, "event": 2, "announcement": 3, "course": 4}
+        results.sort(key=lambda r: (order.get(r["kind"], 9), r["label"]))
+        return {"query": query, "results": results[:limit], "total": len(results)}
+
+    # ---- Phase 05：清理 ------------------------------------------------
+    def delete_course(self, dirname: str) -> dict | None:
+        """刪掉一門課已經下載的內容，同步紀錄裡的對應項目也要清掉。"""
+        out = Path(self.config.out_dir).resolve()
+        course_dir = (out / dirname).resolve()
+        if course_dir.parent != out or not course_dir.is_dir():
+            return None
+        files = [f for f in course_dir.rglob("*") if f.is_file()]
+        freed = sum(f.stat().st_size for f in files)
+        shutil.rmtree(course_dir)
+
+        manifest = Manifest.load(self.config.out_dir)
+        prefix = str(course_dir)
+        manifest.files = {k: v for k, v in manifest.files.items()
+                          if not str(v.get("path") or "").startswith(prefix)}
+        manifest.courses = {k: v for k, v in manifest.courses.items() if v.get("dir") != dirname}
+        manifest.save()
+        return {"deleted": dirname, "files": len(files), "bytes": freed, "size": human_size(freed)}
+
+    # ---- Phase 07：診斷 ------------------------------------------------
+    def diagnostics(self) -> dict:
+        stored = self.storage()
+        return {
+            "mode": "本機伺服器（直接呼叫 NTU COOL API）",
+            "base_url": self.config.base_url,
+            "authenticated": bool(self.config.token),
+            "token_source": "已設定" if self.config.token else "未設定",
+            "out_dir": str(Path(self.config.out_dir).resolve()),
+            "sections": list(self.config.sections),
+            "concurrency": self.config.concurrency,
+            "files": stored["files"],
+            "size": human_size(stored["bytes"]),
+            "courses": len(self.courses()),
+            "last_sync": local_time(Manifest.load(self.config.out_dir).last_sync),
+            "job_status": self.job.status,
+            "last_run": self.last_run,
+            "python": platform.python_version(),
+        }
+
     def resolve_download(self, relative: str) -> Path | None:
         """把網址對應回輸出資料夾裡的檔案，擋掉跳出資料夾的路徑。"""
         out = Path(self.config.out_dir).resolve()
@@ -503,24 +607,42 @@ class WebApp:
         job.status = "running"
 
         def run():
+            client = CanvasClient(config.api_root, config.token, timeout=config.timeout,
+                                  max_retries=config.max_retries, per_page=config.per_page)
             try:
                 scraper = Scraper(
                     config,
-                    CanvasClient(config.api_root, config.token, timeout=config.timeout,
-                                 max_retries=config.max_retries, per_page=config.per_page),
+                    client,
                     Manifest.load(config.out_dir),
                     log=job.log,
                     on_event=job.handle,
+                    should_stop=lambda: job.cancelled,
                 )
                 result = scraper.run()
+                self.last_run = {
+                    "finished_at": local_time(datetime.now(timezone.utc).isoformat()),
+                    "courses": len(result.results),
+                    "downloaded": result.downloaded,
+                    "bytes": result.bytes,
+                    "size": human_size(result.bytes),
+                    "requests": client.request_count,
+                    "retries": client.retry_count,
+                    "rate_limit_remaining": client.rate_limit_remaining,
+                    "last_status": client.last_status,
+                    "cancelled": result.cancelled,
+                    "failures": result.failures[:20],
+                }
                 job.log("")
                 job.log(
                     f"完成：{len(result.results)} 門課程，新增／更新 {result.downloaded} 個檔案"
                     f"（{human_size(result.bytes)}）"
                 )
-                job.status = "done"
+                job.status = "cancelled" if result.cancelled else "done"
             except NtuCoolError as exc:
                 job.log(f"錯誤：{exc}")
+                self.last_run = {"finished_at": local_time(datetime.now(timezone.utc).isoformat()),
+                                 "error": str(exc), "requests": client.request_count,
+                                 "last_status": client.last_status}
                 job.status = "error"
             except Exception as exc:  # noqa: BLE001 — 背景執行緒不能讓例外消失
                 job.log(f"未預期的錯誤：{exc!r}")
@@ -627,6 +749,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
         if path == "/api/status":
             return self._json(self.app.status())
+        if path == "/api/search":
+            return self._json(self.app.search((query.get("q") or [""])[0],
+                                              term=(query.get("term") or [""])[0]))
+        if path == "/api/diagnostics":
+            return self._json(self.app.diagnostics())
         if path == "/api/terms":
             return self._json({"terms": self.app.terms()})
         if path == "/api/courses":
@@ -667,7 +794,8 @@ class Handler(BaseHTTPRequestHandler):
         query = urllib.parse.parse_qs(parsed.query)
         if not self._authorized(query):
             return self._text(403, "存取金鑰不正確")
-        if parsed.path not in ("/api/sync", "/api/login", "/api/logout", "/api/zip-ticket"):
+        if parsed.path not in ("/api/sync", "/api/login", "/api/logout", "/api/zip-ticket",
+                               "/api/cancel", "/api/delete"):
             return self._text(404, "沒有這個端點")
         length = int(self.headers.get("Content-Length") or 0)
         try:
@@ -683,6 +811,11 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/logout":
             self.app.logout()
             return self._json({"ok": True})
+        if parsed.path == "/api/cancel":
+            return self._json({"cancelled": self.app.job.cancel()})
+        if parsed.path == "/api/delete":
+            result = self.app.delete_course(str(payload.get("dir") or ""))
+            return self._json(result) if result else self._text(404, "找不到這門課程")
         if parsed.path == "/api/zip-ticket":
             paths = payload.get("paths") or []
             if not isinstance(paths, list) or not paths:

@@ -4,4 +4,4 @@ NTU COOL 是 Canvas LMS，因此本套件全部透過官方 `/api/v1` REST API �
 不解析網頁、不模擬登入，只需要一個個人存取權杖（access token）。
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"

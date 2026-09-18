@@ -157,6 +157,12 @@ select{background:var(--card);color:var(--text);border:1px solid var(--line);
 .actionbar button{border:0;border-radius:11px;padding:10px 14px;font-weight:700;cursor:pointer;
   background:var(--on-ink);color:var(--ink)}
 .actionbar .ghost{background:transparent;color:var(--on-ink);text-decoration:underline;padding:10px 4px}
+#searchBox{width:100%;padding:13px 15px;border:1px solid var(--line);border-radius:14px;
+  background:var(--card);color:var(--text);margin-top:14px}
+.kind{flex:none;font-size:11px;font-weight:700;color:var(--muted);background:var(--bar);
+  border-radius:8px;padding:4px 8px}
+.diag{font:12px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;
+  word-break:break-word;color:var(--muted);padding:0 18px 16px}
 .detail-head{margin:10px 0 18px}
 .detail-head h2{margin:4px 0}
 </style>
@@ -220,7 +226,10 @@ select{background:var(--card);color:var(--text);border:1px solid var(--line);
     <section class="page" data-page="courses">
       <div class="section-head"><h2>我的課程</h2>
         <select id="termSelect" onchange="onTermChange()" aria-label="學期"></select></div>
-      <p class="muted" id="courseCount" style="margin:8px 0 0"></p>
+      <input type="search" id="searchBox" placeholder="搜尋檔案、作業、公告、行事曆"
+        autocomplete="off" oninput="onSearchInput()">
+      <p class="muted" id="courseCount" style="margin:10px 0 0"></p>
+      <div id="searchResults"></div>
       <div class="course-grid" id="courseGrid"></div>
     </section>
 
@@ -235,7 +244,8 @@ select{background:var(--card);color:var(--text);border:1px solid var(--line);
         <div><strong id="dlFiles">0</strong><small>已完成檔案</small></div>
         <div><strong id="dlSize">0 B</strong><small>已使用</small></div>
       </div>
-      <div class="status hide" id="statusLine"></div>
+      <div class="section-head"><div class="status hide" id="statusLine"></div>
+        <button class="secondary hide" id="cancelBtn" onclick="cancelSync()">取消同步</button></div>
       <div id="downloadList"></div>
       <details id="logBox" class="card hide" style="padding:14px 18px">
         <summary style="cursor:pointer;font-weight:600">同步記錄</summary>
@@ -259,6 +269,10 @@ select{background:var(--card);color:var(--text);border:1px solid var(--line);
         <button class="danger-btn" id="logout">登出（清除這台裝置上的權杖）</button>
       </div>
       <p class="note">檔案存在上面那個資料夾裡，登出不會刪除已經下載的檔案。</p>
+      <details class="card" id="diagBox" style="padding:16px 0 0" ontoggle="if(this.open) loadDiagnostics()">
+        <summary style="cursor:pointer;font-weight:600;padding:0 18px 16px">診斷資訊</summary>
+        <div class="diag" id="diag">展開以載入…</div>
+      </details>
     </section>
 
     <section class="page" data-page="detail">
@@ -417,6 +431,7 @@ async function loadTerms(){
 
 function onTermChange(){
   state.term = $('termSelect').value;
+  if($('searchBox').value.trim()){ runSearch(); }
   try{ localStorage.setItem('ntucool.term', state.term); }catch(e){}
   loadCourses(); loadDashboard();
 }
@@ -450,6 +465,92 @@ function folderLabel(folder){
   return clean ? esc(clean) + ' · ' : '';
 }
 
+let searchTimer = null;
+function onSearchInput(){
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(runSearch, 250);   // 別每按一個字就打一次
+}
+
+const KIND_LABEL = {file:'檔案', assignment:'作業', announcement:'公告', event:'行事曆', course:'課程'};
+
+async function runSearch(){
+  const query = $('searchBox').value.trim();
+  const grid = $('courseGrid'), box = $('searchResults');
+  if(!query){
+    box.innerHTML = '';
+    grid.classList.remove('hide');
+    loadCourses();
+    return;
+  }
+  grid.classList.add('hide');
+  try{
+    const data = await (await api(withTerm('/api/search?q=' + encodeURIComponent(query)))).json();
+    $('courseCount').textContent = data.total ? `找到 ${data.total} 筆` : '';
+    box.innerHTML = data.results.length
+      ? `<div class="card">${data.results.map(r => {
+          const label = esc(r.label);
+          const link = r.path ? `/files/${encodeURI(r.path)}?k=${encodeURIComponent(KEY)}` : (r.url || '');
+          const title = link ? `<a class="link" href="${esc(link)}" target="_blank" rel="noopener">${label}</a>`
+                             : (r.dir ? `<a class="link" href="#" onclick="openCourse('${esc(r.dir)}');return false">${label}</a>` : label);
+          return `<div class="row"><span class="kind">${KIND_LABEL[r.kind] || r.kind}</span>
+            <div><b>${title}</b><small>${esc(r.sub)}${r.size ? ' · ' + esc(r.size) : ''}</small></div></div>`;
+        }).join('')}</div>`
+      : '<div class="card"><div class="empty"><b>沒有符合的結果</b><p>換個關鍵字試試。</p></div></div>';
+  }catch(e){ box.innerHTML = '<p class="muted">搜尋失敗：' + esc(e) + '</p>'; }
+}
+
+// ---- 取消同步 ----
+async function cancelSync(){
+  $('cancelBtn').disabled = true;
+  try{ await api('/api/cancel', {method:'POST'}); }
+  finally{ $('cancelBtn').disabled = false; }
+}
+
+// ---- 刪除已下載的課程檔案 ----
+async function deleteCourse(dir, name){
+  if(!confirm(`要刪除「${name}」已經下載的檔案嗎？\n\n這只會刪本機檔案，NTU COOL 上的東西不受影響，之後可以再同步回來。`)) return;
+  const res = await api('/api/delete', {method:'POST', headers:{'Content-Type':'application/json'},
+                                        body: JSON.stringify({dir})});
+  if(!res.ok){ alert('刪除失敗：' + await res.text()); return; }
+  const data = await res.json();
+  alert(`已刪除 ${data.files} 個檔案，釋出 ${data.size}。`);
+  go('courses'); loadStatus(); loadCourses(); loadDashboard();
+}
+
+// ---- 診斷 ----
+async function loadDiagnostics(){
+  try{
+    const d = await (await api('/api/diagnostics')).json();
+    const rows = [
+      ['模式', d.mode],
+      ['站台', d.base_url],
+      ['權杖', d.authenticated ? '已設定' : '未設定'],
+      ['輸出位置', d.out_dir],
+      ['擷取項目', (d.sections || []).join(', ')],
+      ['同時下載數', d.concurrency],
+      ['課程 / 檔案', `${d.courses} / ${d.files}（${d.size}）`],
+      ['上次同步', d.last_sync || '尚未同步'],
+      ['同步狀態', d.job_status],
+      ['Python', d.python],
+    ];
+    const run = d.last_run || {};
+    if(run.finished_at){
+      rows.push(['—— 上一次執行 ——', '']);
+      rows.push(['結束於', run.finished_at]);
+      if(run.error) rows.push(['錯誤', run.error]);
+      if(run.courses != null) rows.push(['課程數', run.courses]);
+      if(run.downloaded != null) rows.push(['新增／更新', `${run.downloaded}（${run.size}）`]);
+      if(run.requests != null) rows.push(['API 呼叫', run.requests]);
+      if(run.retries != null) rows.push(['重試次數', run.retries]);
+      if(run.rate_limit_remaining != null) rows.push(['剩餘額度', run.rate_limit_remaining]);
+      if(run.last_status != null) rows.push(['最後 HTTP 狀態', run.last_status]);
+      if(run.cancelled) rows.push(['已取消', '是']);
+      (run.failures || []).slice(0, 8).forEach((f, i) => rows.push([i ? '' : '未取得', f]));
+    }
+    $('diag').textContent = rows.map(([k, v]) => `${k}${k && v !== '' ? '：' : ''}${v}`).join('\n');
+  }catch(e){ $('diag').textContent = '讀取失敗：' + e; }
+}
+
 async function openCourse(dir){
   go('detail');
   $('courseDetail').innerHTML = '<p class="muted">載入中…</p>';
@@ -468,7 +569,9 @@ async function openCourse(dir){
         <h2>${esc(c.name)}</h2><p class="muted">${esc(c.teacher)}</p>
         ${c.url ? `<a class="link" href="${esc(c.url)}" target="_blank" rel="noopener">在 NTU COOL 開啟 ›</a>` : ''}
         <button class="compact full" style="padding:14px;margin-top:16px"
-          onclick="downloadCourse('${esc(c.dir)}')">⤓ 一鍵下載整門課（${c.files.length} 個檔案）</button></div>
+          onclick="downloadCourse('${esc(c.dir)}')">⤓ 一鍵下載整門課（${c.files.length} 個檔案）</button>
+        <button class="link" style="margin-top:12px;color:var(--err)"
+          onclick="deleteCourse('${esc(c.dir)}', '${esc(c.name)}')">刪除已下載的檔案</button></div>
       ${c.assignments.length ? `<div class="section-head"><h3>作業</h3></div><div class="card">${
         c.assignments.map(a => `<div class="row"><div><b>${esc(a.name)}</b>
           <small>${a.due_at ? '截止 ' + esc(a.due_at.slice(0,10)) : '未設截止日'}</small></div>
@@ -541,6 +644,7 @@ async function startSync(){
   $('go').disabled = true;
   $('logBox').classList.remove('hide');
   $('statusLine').classList.remove('hide');
+  $('cancelBtn').classList.remove('hide');
   $('log').textContent = '';
   logFrom = 0;
   const body = JSON.stringify({
@@ -580,10 +684,16 @@ async function poll(){
   renderDownloads(res.courses || [], res.status);
   const line = $('statusLine');
   line.className = 'status ' + res.status;
-  line.textContent = {running:'同步中…', done:'同步完成', error:'發生錯誤', idle:''}[res.status] || '';
+  line.textContent = {running:'同步中…', done:'同步完成', error:'發生錯誤',
+                      cancelled:'已取消', idle:''}[res.status] || '';
+  line.classList.remove('hide');
+  $('cancelBtn').classList.toggle('hide', res.status !== 'running');
   if(res.status === 'running'){
     polling = setTimeout(poll, 700);
-  }else{
+    return;
+  }
+  {
+    $('cancelBtn').classList.add('hide');
     $('go').disabled = false;
     loadStatus(); loadTerms(); loadCourses(); loadDashboard();
   }

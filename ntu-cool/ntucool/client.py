@@ -101,6 +101,9 @@ class CanvasClient:
         self._sleep = sleep
         self._log = logger or (lambda *_: None)
         self.request_count = 0
+        self.retry_count = 0
+        self.rate_limit_remaining: float | None = None
+        self.last_status: int | None = None
 
     # ---- 低階 ------------------------------------------------------------
     def _url(self, path: str, params: dict | None = None) -> str:
@@ -144,11 +147,14 @@ class CanvasClient:
                 with self._opener.open(req, timeout=self.timeout) as resp:
                     body = resp.read()
                     headers = dict(resp.headers.items())
+                    self.last_status = resp.status
                     self._respect_rate_limit(headers)
                     return Response(resp.status, headers, body)
             except urllib.error.HTTPError as exc:  # 4xx / 5xx
                 body = exc.read() if hasattr(exc, "read") else b""
+                self.last_status = exc.code
                 if exc.code in RETRY_STATUSES and attempt < self.max_retries:
+                    self.retry_count += 1
                     delay = self._retry_delay(attempt, exc.headers)
                     self._log(f"  · {exc.code} {url} → {delay:.1f}s 後重試")
                     last_error = exc
@@ -157,6 +163,7 @@ class CanvasClient:
                 self._raise_for_status(exc.code, url, body)
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 if attempt < self.max_retries:
+                    self.retry_count += 1
                     delay = self._retry_delay(attempt, None)
                     self._log(f"  · 連線失敗（{exc}）→ {delay:.1f}s 後重試")
                     last_error = exc
@@ -184,6 +191,7 @@ class CanvasClient:
             value = float(remaining)
         except ValueError:
             return
+        self.rate_limit_remaining = value
         if value < 100:
             self._log(f"  · 額度僅剩 {value:.0f}，暫停 1 秒")
             self._sleep(1.0)

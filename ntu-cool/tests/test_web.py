@@ -609,6 +609,143 @@ class TestSemesterAndCalendar(WebTestCase):
         self.assertEqual(app.config_for({}).terms, ())
 
 
+class TestSearch(WebTestCase):
+    """Phase 04：跨課程搜尋，只讀本機資料。"""
+
+    def results(self, query, **params):
+        extra = "".join(f"&{k}={urllib.request.quote(str(v))}" for k, v in params.items())
+        _, body, _ = self.get(f"/api/search?q={urllib.request.quote(query)}{extra}")
+        return json.loads(body)
+
+    def test_finds_files_by_name(self):
+        self.sync_and_wait()
+        data = self.results("投影片")
+        self.assertEqual(data["total"], 1)
+        hit = data["results"][0]
+        self.assertEqual((hit["kind"], hit["label"]), ("file", "week1-投影片.pdf"))
+        self.assertTrue(hit["path"].endswith("week1-投影片.pdf"))
+
+    def test_finds_assignments_announcements_events_and_courses(self):
+        self.sync_and_wait()
+        for query, kind in (("HW1", "assignment"), ("第一次上課", "announcement"),
+                            ("期中考", "event"), ("演算法", "course")):
+            kinds = [r["kind"] for r in self.results(query)["results"]]
+            self.assertIn(kind, kinds, query)
+
+    def test_search_is_case_insensitive_and_partial(self):
+        self.sync_and_wait()
+        self.assertTrue(self.results("WEEK1")["total"])
+        self.assertTrue(self.results("week")["total"])
+
+    def test_empty_query_and_no_matches(self):
+        self.sync_and_wait()
+        self.assertEqual(self.results("")["results"], [])
+        self.assertEqual(self.results("這個一定找不到zzz")["total"], 0)
+
+    def test_search_respects_the_term_filter(self):
+        self.sync_and_wait()
+        self.assertTrue(self.results("投影片", term="113-2")["total"])
+        self.assertEqual(self.results("投影片", term="112-1")["total"], 0)
+
+    def test_files_rank_above_courses(self):
+        self.sync_and_wait()
+        kinds = [r["kind"] for r in self.results("資料結構")["results"]]
+        if "file" in kinds and "course" in kinds:
+            self.assertLess(kinds.index("file"), kinds.index("course"))
+
+
+class TestDeleteAndCancel(WebTestCase):
+    """Phase 05：清掉已下載的內容、中止進行中的同步。"""
+
+    def test_deleting_a_course_frees_space_and_clears_the_manifest(self):
+        from ntucool.manifest import Manifest
+
+        self.sync_and_wait()
+        dirname = next(c["dir"] for c in json.loads(self.get("/api/courses")[1])["courses"]
+                       if c["code"] == "CSIE1212")
+        before = json.loads(self.get("/api/status")[1])["bytes"]
+
+        status, result = self.post("/api/delete", {"dir": dirname})
+        self.assertEqual(status, 200)
+        self.assertGreater(result["files"], 0)
+        self.assertFalse((self.out / dirname).exists())
+
+        after = json.loads(self.get("/api/status")[1])["bytes"]
+        self.assertLess(after, before)
+        remaining = Manifest.load(self.out).files
+        self.assertFalse([v for v in remaining.values() if dirname in str(v.get("path"))])
+
+    def test_deleted_course_is_downloaded_again_next_sync(self):
+        self.sync_and_wait()
+        dirname = next(c["dir"] for c in json.loads(self.get("/api/courses")[1])["courses"]
+                       if c["code"] == "CSIE1212")
+        self.post("/api/delete", {"dir": dirname})
+        state = self.sync_and_wait()
+        self.assertEqual(state["status"], "done")
+        self.assertTrue((self.out / dirname / "course.md").is_file())
+
+    def test_delete_rejects_paths_outside_the_output_folder(self):
+        self.sync_and_wait()
+        for attempt in ("..", "../..", "nope"):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self.post("/api/delete", {"dir": attempt})
+            self.assertEqual(caught.exception.code, 404, attempt)
+
+    def test_cancel_only_applies_while_running(self):
+        _, result = self.post("/api/cancel", {})
+        self.assertFalse(result["cancelled"])          # 沒在跑就沒得取消
+        self.httpd.app.job.status = "running"
+        _, result = self.post("/api/cancel", {})
+        self.assertTrue(result["cancelled"])
+        self.assertTrue(self.httpd.app.job.cancelled)
+
+    def test_scraper_stops_between_courses_when_cancelled(self):
+        from ntucool.client import CanvasClient
+        from ntucool.manifest import Manifest
+        from ntucool.scraper import Scraper
+
+        config = self.httpd.app.config
+        scraper = Scraper(
+            config,
+            CanvasClient(config.api_root, config.token, max_retries=1, sleep=lambda *_: None),
+            Manifest.load(config.out_dir),
+            should_stop=lambda: True,          # 一開始就取消
+        )
+        run = scraper.run()
+        self.assertTrue(run.cancelled)
+        self.assertEqual(run.results, [])
+        self.assertEqual(run.downloaded, 0)
+
+
+class TestDiagnostics(WebTestCase):
+    """Phase 07：診斷畫面的資料。"""
+
+    def test_reports_mode_and_configuration(self):
+        _, body, _ = self.get("/api/diagnostics")
+        data = json.loads(body)
+        self.assertIn("本機伺服器", data["mode"])
+        self.assertEqual(data["base_url"], self.canvas.base_url)
+        self.assertTrue(data["authenticated"])
+        self.assertIn("files", data["sections"])
+        self.assertTrue(data["python"])
+
+    def test_records_the_last_run(self):
+        self.sync_and_wait()
+        data = json.loads(self.get("/api/diagnostics")[1])
+        run = data["last_run"]
+        self.assertEqual(run["courses"], 2)
+        self.assertGreater(run["requests"], 0)
+        self.assertIn("retries", run)
+        self.assertFalse(run["cancelled"])
+        self.assertTrue(run["failures"])            # 鎖住的檔案等未取得項目
+        self.assertEqual(data["courses"], 2)
+
+    def test_never_exposes_the_token(self):
+        self.sync_and_wait()
+        _, body, _ = self.get("/api/diagnostics")
+        self.assertNotIn(TOKEN, body.decode("utf-8"))
+
+
 class TestProgressAggregation(WebTestCase):
     """每門課的進度條：由 Scraper 丟出的事件累積而成。"""
 

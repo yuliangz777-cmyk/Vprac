@@ -35,6 +35,10 @@ from .report import (
 _ROOT_FOLDER_NAMES = ("course files", "課程檔案", "files")
 
 
+class Cancelled(Exception):
+    """使用者按了取消。"""
+
+
 @dataclass
 class CourseResult:
     course: dict
@@ -57,6 +61,7 @@ class RunResult:
     out_dir: Path
     started_at: str
     requests: int = 0
+    cancelled: bool = False
 
     @property
     def downloaded(self) -> int:
@@ -80,7 +85,7 @@ def _clean_folder_path(full_name: str | None) -> str:
 
 class Scraper:
     def __init__(self, config: Config, client: CanvasClient, manifest: Manifest | None = None,
-                 log=None, on_event=None):
+                 log=None, on_event=None, should_stop=None):
         self.config = config
         self.client = client
         self.out_dir = Path(config.out_dir)
@@ -88,6 +93,9 @@ class Scraper:
         self.log = log or (lambda *_: None)
         # 結構化進度事件；網頁介面用它畫每一門課的進度條
         self.on_event = on_event or (lambda _event: None)
+        # 回傳 True 就代表使用者按了取消：在課程之間與每個檔案之前檢查
+        self.should_stop = should_stop or (lambda: False)
+        self.cancelled = False
 
     # ---- 課程清單 --------------------------------------------------------
     def list_courses(self) -> list[dict]:
@@ -127,6 +135,10 @@ class Scraper:
         self.log(f"找到 {len(courses)} 門符合條件的課程")
         results = []
         for index, course in enumerate(courses, 1):
+            if self.should_stop():
+                self.cancelled = True
+                self.log("已取消，停在這裡。已經抓好的檔案都會留著。")
+                break
             label = f"{course.get('course_code') or ''} {course.get('name')}".strip()
             self.log(f"[{index}/{len(courses)}] {label}")
             self.on_event({"type": "course_start", "index": index, "total": len(courses),
@@ -153,7 +165,8 @@ class Scraper:
                     {"files": result.files_total, "downloaded": result.downloaded, "dir": result.dirname},
                 )
             self.manifest.save()
-        return RunResult(results=results, out_dir=self.out_dir, started_at=started_at, requests=self.client.request_count)
+        return RunResult(results=results, out_dir=self.out_dir, started_at=started_at,
+                         requests=self.client.request_count, cancelled=self.cancelled)
 
     # ---- 單一課程 --------------------------------------------------------
     def sync_course(self, course: dict) -> CourseResult:
@@ -414,6 +427,8 @@ class Scraper:
         self.on_event({"type": "downloads_planned", "course": label, "id": cid, "total": len(jobs)})
 
         def worker(job):
+            if self.should_stop():
+                raise Cancelled()
             item, dest = job
             written = self.client.download(item["url"], dest, expected_size=item.get("size") or None)
             return item, dest, written
@@ -421,6 +436,9 @@ class Scraper:
         with ThreadPoolExecutor(max_workers=max(1, cfg.concurrency)) as pool:
             for job, outcome in zip(jobs, pool.map(_safe(worker), jobs)):
                 ok, value = outcome
+                if not ok and isinstance(value, Cancelled):
+                    self.cancelled = True
+                    continue
                 if not ok:
                     result.failures.append(f"「{job[0].get('name')}」下載失敗：{value}")
                     self.log(f"  ! 下載失敗：{job[0].get('name')}（{value}）")
