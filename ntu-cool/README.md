@@ -254,6 +254,7 @@ PDF 直接點開就能看，也可以長按分享到 GoodNotes、Notability 或�
 python3 -m ntucool web --open
 ```
 
+macOS／Linux 也可以直接執行 `./start.sh`，Windows 雙擊 `start.bat`。
 瀏覽器會自動打開操作介面。**第一次會先請你登入**，之後就是：
 按一下 →  所有課程的檔案自動下載 → 在同一頁直接點開。
 網址每次啟動都一樣，可以加書籤；想換掉金鑰用 `--new-key`。
