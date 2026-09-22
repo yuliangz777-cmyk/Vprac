@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ntucool"
+version = "1.1.0"
+description = "自動擷取 NTU COOL 課程資訊與檔案"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []          # 只用 Python 標準函式庫
+
+[project.scripts]
+ntucool = "ntucool.cli:main"
+
+[tool.setuptools]
+packages = ["ntucool"]

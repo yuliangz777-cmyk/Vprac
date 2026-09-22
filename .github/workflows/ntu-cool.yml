@@ -1,0 +1,74 @@
+name: NTU COOL 擷取
+
+on:
+  push:
+    paths: ["ntu-cool/**", ".github/workflows/ntu-cool.yml"]
+  pull_request:
+    paths: ["ntu-cool/**", ".github/workflows/ntu-cool.yml"]
+  schedule:
+    - cron: "17 21 * * *"   # 每天 05:17（台北時間）自動同步一次
+  workflow_dispatch:
+    inputs:
+      args:
+        description: "額外傳給 ntucool sync 的參數，例如 --force 或 -c CSIE1212"
+        required: false
+        default: ""
+
+jobs:
+  test:
+    name: 測試
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 執行測試
+        working-directory: ntu-cool
+        run: python -m unittest discover -s tests -v
+
+  sync:
+    name: 自動同步
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 檢查是否設定了權杖
+        id: guard
+        env:
+          TOKEN: ${{ secrets.NTU_COOL_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "尚未設定 NTU_COOL_TOKEN secret，略過同步。"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 把上一次的同步狀態帶回來，這樣只會下載新增／更新的檔案
+      - name: 還原同步狀態
+        if: steps.guard.outputs.ready == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ntu-cool/ntu-cool-data
+          key: ntu-cool-data-${{ github.run_id }}
+          restore-keys: ntu-cool-data-
+
+      - name: 同步
+        if: steps.guard.outputs.ready == 'true'
+        working-directory: ntu-cool
+        env:
+          NTU_COOL_TOKEN: ${{ secrets.NTU_COOL_TOKEN }}
+        run: python -m ntucool sync ${{ github.event.inputs.args }}
+
+      - name: 上傳擷取結果
+        if: steps.guard.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ntu-cool-data
+          path: ntu-cool/ntu-cool-data
+          retention-days: 7
